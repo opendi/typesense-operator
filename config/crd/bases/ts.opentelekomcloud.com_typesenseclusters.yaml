@@ -1022,6 +1022,11 @@ spec:
               enableCors:
                 default: false
                 type: boolean
+              healthProbeTimeoutInMilliseconds:
+                default: 500
+                maximum: 60000
+                minimum: 500
+                type: integer
               healthcheck:
                 properties:
                   image:
