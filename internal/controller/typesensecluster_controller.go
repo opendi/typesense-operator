@@ -19,6 +19,9 @@ package controller
 import (
 	"context"
 	"fmt"
+	"strings"
+	"time"
+
 	"github.com/go-logr/logr"
 	"github.com/pkg/errors"
 	"golang.org/x/text/cases"
@@ -33,8 +36,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
-	"strings"
-	"time"
 
 	tsv1alpha1 "github.com/akyriako/typesense-operator/api/v1alpha1"
 )
@@ -68,8 +69,16 @@ var (
 			return !e.DeleteStateUnknown
 		},
 	})
+	// kubelets sync configmaps by default every minute so let's wait for 2 minutes
+	configMapRequeuePeriod = 2 * time.Minute
+	reconcileRequeuePeriod = 60 * time.Second
+)
 
-	requeueAfter = time.Second * 30
+type Action string
+
+const (
+	Bootstrapping Action = "bootstrapping"
+	Reconciling   Action = "reconciling"
 )
 
 // +kubebuilder:rbac:groups=ts.opentelekomcloud.com,resources=typesenseclusters,verbs=get;list;watch;create;update;patch;delete
@@ -123,7 +132,7 @@ func (r *TypesenseClusterReconciler) Reconcile(ctx context.Context, req ctrl.Req
 	}
 
 	// Update strategy: Update the existing object, if changes are identified in the desired.Data["nodes"]
-	updated, err := r.ReconcileConfigMap(ctx, ts)
+	configMapUpdated, err := r.ReconcileConfigMap(ctx, ts)
 	if err != nil {
 		cerr := r.setConditionNotReady(ctx, &ts, ConditionReasonConfigMapNotReady, err)
 		if cerr != nil {
@@ -173,7 +182,6 @@ func (r *TypesenseClusterReconciler) Reconcile(ctx context.Context, req ctrl.Req
 	}
 
 	// Update strategy: Update the whole specs when changes are identified
-	// Update the whole specs when changes are identified
 	sts, err := r.ReconcileStatefulSet(ctx, &ts)
 	if err != nil {
 		cerr := r.setConditionNotReady(ctx, &ts, ConditionReasonStatefulSetNotReady, err)
@@ -184,69 +192,90 @@ func (r *TypesenseClusterReconciler) Reconcile(ctx context.Context, req ctrl.Req
 	}
 
 	terminationGracePeriodSeconds := *sts.Spec.Template.Spec.TerminationGracePeriodSeconds
+	requeueAfter := reconcileRequeuePeriod + (time.Duration(terminationGracePeriodSeconds) * time.Second)
 	toTitle := func(s string) string {
 		return cases.Title(language.Und, cases.NoLower).String(s)
 	}
 
 	cond := ConditionReasonQuorumStateUnknown
-	if *updated {
-		condition, _, err := r.ReconcileQuorum(ctx, &ts, secret, client.ObjectKeyFromObject(sts))
+	action := Bootstrapping
+	if configMapUpdated != nil {
+		action = Reconciling
+	}
+
+	if configMapUpdated == nil {
+		r.logger.Info(fmt.Sprintf("%s cluster completed", string(action)), "condition", cond, "requeueAfter", requeueAfter)
+		return ctrl.Result{RequeueAfter: requeueAfter}, nil
+	}
+
+	if *configMapUpdated {
+		err = r.forcePodsConfigMapUpdate(ctx, &ts)
 		if err != nil {
-			r.logger.Error(err, "reconciling quorum health failed")
+			r.logger.Error(err, "failed to force pods configmap update", "configmap", fmt.Sprintf(ClusterNodesConfigMap, ts.Name))
 		}
 
-		if strings.Contains(string(condition), "QuorumNeedsAttention") {
-			eram := "cluster needs manual administrative attention: "
+		cond = ConditionReasonQuorumNotReadyWaitATerm
+		requeueAfter = configMapRequeuePeriod
 
-			if condition == ConditionReasonQuorumNeedsAttentionClusterIsLagging {
-				eram += "queued_writes > healthyWriteLagThreshold"
+		err = errors.New("wait on configmap updates")
+		cerr := r.setConditionNotReady(ctx, &ts, string(cond), err)
+		if cerr != nil {
+			return ctrl.Result{}, cerr
+		}
+		r.Recorder.Eventf(&ts, "Warning", string(cond), toTitle(err.Error()))
+	}
+
+	condition, _, err := r.ReconcileQuorum(ctx, &ts, secret, client.ObjectKeyFromObject(sts))
+	if err != nil {
+		r.logger.Error(err, "reconciling quorum health failed")
+	}
+
+	if strings.Contains(string(condition), "QuorumNeedsAttention") {
+		eram := "cluster needs manual administrative attention: "
+
+		if condition == ConditionReasonQuorumNeedsAttentionClusterIsLagging {
+			eram += "queued_writes > healthyWriteLagThreshold"
+		}
+
+		if condition == ConditionReasonQuorumNeedsAttentionMemoryOrDiskIssue {
+			eram += "out of memory or disk"
+		}
+
+		erram := errors.New(eram)
+		cerr := r.setConditionNotReady(ctx, &ts, string(condition), erram)
+		if cerr != nil {
+			return ctrl.Result{}, cerr
+		}
+		r.Recorder.Eventf(&ts, "Warning", string(condition), toTitle(erram.Error()))
+
+	} else {
+		if condition != ConditionReasonQuorumReady {
+			if err == nil {
+				err = errors.New("quorum is not ready")
 			}
-
-			if condition == ConditionReasonQuorumNeedsAttentionMemoryOrDiskIssue {
-				eram += "out of memory or disk"
-			}
-
-			erram := errors.New(eram)
-			cerr := r.setConditionNotReady(ctx, &ts, string(condition), erram)
+			cerr := r.setConditionNotReady(ctx, &ts, string(condition), err)
 			if cerr != nil {
 				return ctrl.Result{}, cerr
 			}
-			r.Recorder.Eventf(&ts, "Warning", string(condition), toTitle(erram.Error()))
 
+			r.Recorder.Eventf(&ts, "Warning", string(condition), toTitle(err.Error()))
 		} else {
-			if condition != ConditionReasonQuorumReady {
-				if err == nil {
-					err = errors.New("quorum is not ready")
-				}
-				cerr := r.setConditionNotReady(ctx, &ts, string(condition), err)
-				if cerr != nil {
-					return ctrl.Result{}, cerr
-				}
+			report := ts.Status.Conditions[0].Status != metav1.ConditionTrue
 
-				r.Recorder.Eventf(&ts, "Warning", string(condition), toTitle(err.Error()))
-			} else {
-				report := ts.Status.Conditions[0].Status != metav1.ConditionTrue
+			cerr := r.setConditionReady(ctx, &ts, string(condition))
+			if cerr != nil {
+				return ctrl.Result{}, cerr
+			}
 
-				cerr := r.setConditionReady(ctx, &ts, string(condition))
-				if cerr != nil {
-					return ctrl.Result{}, cerr
-				}
-
-				if report {
-					r.Recorder.Eventf(&ts, "Normal", string(condition), toTitle("quorum is ready"))
-				}
+			if report {
+				r.Recorder.Eventf(&ts, "Normal", string(condition), toTitle("quorum is ready"))
 			}
 		}
-		cond = condition
 	}
 
-	lastAction := "bootstrapping"
-	if *updated {
-		lastAction = "reconciling"
-	}
-	requeueAfter = time.Duration(60+terminationGracePeriodSeconds) * time.Second
-	r.logger.Info(fmt.Sprintf("%s cluster completed", lastAction), "condition", cond, "requeueAfter", requeueAfter)
+	cond = condition
 
+	r.logger.Info(fmt.Sprintf("%s cluster completed", string(action)), "condition", cond, "requeueAfter", requeueAfter)
 	return ctrl.Result{RequeueAfter: requeueAfter}, nil
 }
 

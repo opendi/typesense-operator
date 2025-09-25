@@ -3,6 +3,10 @@ package controller
 import (
 	"context"
 	"fmt"
+	"sort"
+	"strings"
+	"time"
+
 	tsv1alpha1 "github.com/akyriako/typesense-operator/api/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
@@ -12,10 +16,13 @@ import (
 	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"strings"
 )
 
-func (r *TypesenseClusterReconciler) ReconcileConfigMap(ctx context.Context, ts tsv1alpha1.TypesenseCluster) (updated *bool, err error) {
+const (
+	forceConfigMapUpdateAnnotationKey = "ts.opentelekomcloud.com/forced-configmap-update-time"
+)
+
+func (r *TypesenseClusterReconciler) ReconcileConfigMap(ctx context.Context, ts tsv1alpha1.TypesenseCluster) (*bool, error) {
 	r.logger.V(debugLevel).Info("reconciling config map")
 
 	configMapName := fmt.Sprintf(ClusterNodesConfigMap, ts.Name)
@@ -23,33 +30,33 @@ func (r *TypesenseClusterReconciler) ReconcileConfigMap(ctx context.Context, ts 
 	configMapObjectKey := client.ObjectKey{Namespace: ts.Namespace, Name: configMapName}
 
 	var cm = &v1.ConfigMap{}
-	if err = r.Get(ctx, configMapObjectKey, cm); err != nil {
+	if err := r.Get(ctx, configMapObjectKey, cm); err != nil {
 		if apierrors.IsNotFound(err) {
 			configMapExists = false
 		} else {
 			r.logger.Error(err, fmt.Sprintf("unable to fetch config map: %s", configMapName))
-			return ptr.To[bool](false), err
+			return nil, err
 		}
 	}
 
 	if !configMapExists {
 		r.logger.V(debugLevel).Info("creating config map", "configmap", configMapObjectKey.Name)
 
-		cm, err = r.createConfigMap(ctx, configMapObjectKey, &ts)
+		_, err := r.createConfigMap(ctx, configMapObjectKey, &ts)
 		if err != nil {
 			r.logger.Error(err, "creating config map failed", "configmap", configMapObjectKey.Name)
 			return nil, err
 		}
-	} else {
-		r.logger.V(debugLevel).Info("updating config map", "configmap", configMapObjectKey.Name)
 
-		cm, _, err = r.updateConfigMap(ctx, &ts, cm, nil)
-		if err != nil {
-			return nil, err
-		}
+		return nil, nil
 	}
 
-	return &configMapExists, nil
+	_, _, updated, err := r.updateConfigMap(ctx, &ts, cm, nil, false)
+	if err != nil {
+		return ptr.To[bool](false), err
+	}
+
+	return &updated, nil
 }
 
 const nodeNameLenLimit = 64
@@ -81,7 +88,7 @@ func (r *TypesenseClusterReconciler) createConfigMap(ctx context.Context, key cl
 	return cm, nil
 }
 
-func (r *TypesenseClusterReconciler) updateConfigMap(ctx context.Context, ts *tsv1alpha1.TypesenseCluster, cm *v1.ConfigMap, replicas *int32) (*v1.ConfigMap, int, error) {
+func (r *TypesenseClusterReconciler) updateConfigMap(ctx context.Context, ts *tsv1alpha1.TypesenseCluster, cm *v1.ConfigMap, replicas *int32, resizeOp bool) (*v1.ConfigMap, int, bool, error) {
 	stsName := fmt.Sprintf(ClusterStatefulSet, ts.Name)
 	stsObjectKey := client.ObjectKey{
 		Name:      stsName,
@@ -93,13 +100,13 @@ func (r *TypesenseClusterReconciler) updateConfigMap(ctx context.Context, ts *ts
 		if apierrors.IsNotFound(err) {
 			err := r.deleteConfigMap(ctx, cm)
 			if err != nil {
-				return nil, 0, err
+				return nil, 0, false, err
 			}
 		} else {
 			r.logger.Error(err, fmt.Sprintf("unable to fetch statefulset: %s", stsName))
 		}
 
-		return nil, 0, err
+		return nil, 0, false, err
 	}
 
 	if replicas == nil {
@@ -107,15 +114,18 @@ func (r *TypesenseClusterReconciler) updateConfigMap(ctx context.Context, ts *ts
 	}
 
 	nodes, err := r.getNodes(ctx, ts, *replicas, false)
+	if err != nil {
+		return nil, 0, false, err
+	}
 	fallback, err := r.getNodes(ctx, ts, *replicas, true)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, false, err
 	}
 
 	availableNodes := len(nodes)
 	if availableNodes == 0 {
 		r.logger.V(debugLevel).Info("empty quorum configuration")
-		return nil, 0, fmt.Errorf("empty quorum configuration")
+		return nil, 0, false, fmt.Errorf("empty quorum configuration")
 	}
 
 	desired := cm.DeepCopy()
@@ -124,25 +134,66 @@ func (r *TypesenseClusterReconciler) updateConfigMap(ctx context.Context, ts *ts
 		"fallback": strings.Join(fallback, ","),
 	}
 
-	r.logger.V(debugLevel).Info("current quorum configuration", "size", availableNodes, "nodes", nodes)
+	if !resizeOp {
+		currentNodes := strings.Split(cm.Data["nodes"], ",")
+		sort.Strings(currentNodes)
+		r.logger.V(debugLevel).Info("current quorum configuration", "size", len(currentNodes), "nodes", currentNodes)
+	}
 
+	updated := false
 	if cm.Data["nodes"] != desired.Data["nodes"] || cm.Data["fallback"] != desired.Data["fallback"] {
-		r.logger.Info("updating quorum configuration", "size", availableNodes, "nodes", nodes)
+		if !resizeOp {
+			sort.Strings(nodes)
+			r.logger.Info("updating quorum configuration", "size", availableNodes, "nodes", nodes)
+		}
 
 		err := r.Update(ctx, desired)
 		if err != nil {
 			r.logger.Error(err, "updating quorum configuration failed")
-			return nil, 0, err
+			return nil, 0, false, err
 		}
+		updated = true
 	}
 
-	return desired, availableNodes, nil
+	return desired, availableNodes, updated, nil
 }
 
 func (r *TypesenseClusterReconciler) deleteConfigMap(ctx context.Context, cm *v1.ConfigMap) error {
 	err := r.Delete(ctx, cm)
 	if err != nil {
 		return err
+	}
+
+	return nil
+}
+
+// ForcePodsConfigMapUpdate forces a configmap update for all pods in the statefulset
+// it should be called after a configmap update occurs
+// https://kubernetes.io/docs/tasks/configure-pod-container/configure-pod-configmap/#mounted-configmaps-are-updated-automatically
+func (r *TypesenseClusterReconciler) forcePodsConfigMapUpdate(ctx context.Context, ts *tsv1alpha1.TypesenseCluster) error {
+	labelMap := getLabels(ts)
+	labelSelector := labels.SelectorFromSet(labelMap)
+
+	var podList v1.PodList
+	if err := r.Client.List(ctx, &podList,
+		client.InNamespace(ts.Namespace),
+		client.MatchingLabelsSelector{Selector: labelSelector},
+	); err != nil {
+		return err
+	}
+
+	for i := range podList.Items {
+		pod := &podList.Items[i]
+
+		if pod.Annotations == nil {
+			pod.Annotations = map[string]string{}
+		}
+		pod.Annotations[forceConfigMapUpdateAnnotationKey] = time.Now().Format(time.RFC3339)
+
+		if err := r.Patch(ctx, pod, client.MergeFrom(pod.DeepCopy())); err != nil {
+			r.logger.Error(err, "patching to pod annotations failed", "pod", pod.Name)
+			return err
+		}
 	}
 
 	return nil
