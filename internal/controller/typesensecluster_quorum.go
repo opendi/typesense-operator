@@ -3,14 +3,16 @@ package controller
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"sort"
+	"strconv"
+	"strings"
+	"time"
+
 	tsv1alpha1 "github.com/akyriako/typesense-operator/api/v1alpha1"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/utils/ptr"
-	"net/http"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sort"
-	"strconv"
-	"time"
 )
 
 const (
@@ -38,7 +40,7 @@ func (r *TypesenseClusterReconciler) ReconcileQuorum(ctx context.Context, ts *ts
 
 	nodesStatus := make(map[string]NodeStatus)
 	httpClient := &http.Client{
-		Timeout: 500 * time.Millisecond,
+		Timeout: time.Duration(ts.Spec.HealthProbeTimeoutInMilliseconds) * time.Millisecond,
 	}
 
 	queuedWrites := 0
@@ -88,6 +90,10 @@ func (r *TypesenseClusterReconciler) ReconcileQuorum(ctx context.Context, ts *ts
 	r.logger.V(debugLevel).Info("reporting cluster status", "status", clusterStatus)
 
 	if clusterStatus == ClusterStatusSplitBrain {
+		nodeslist := strings.Split(quorum.NodesListConfigMap.Data["nodeslist"], ",")
+		if _, c := contains(nodeslist, fmt.Sprintf(ClusterStatefulSet, ts.Name)); c == true {
+			return ConditionReasonQuorumNotReadyWaitATerm, 0, nil
+		}
 		return r.downgradeQuorum(ctx, ts, quorum.NodesListConfigMap, stsObjectKey, sts.Status.ReadyReplicas, int32(quorum.MinRequiredNodes))
 	}
 
@@ -141,6 +147,10 @@ func (r *TypesenseClusterReconciler) ReconcileQuorum(ctx context.Context, ts *ts
 	}
 
 	if clusterStatus == ClusterStatusElectionDeadlock {
+		nodeslist := strings.Split(quorum.NodesListConfigMap.Data["nodeslist"], ",")
+		if _, c := contains(nodeslist, fmt.Sprintf(ClusterStatefulSet, ts.Name)); c == true {
+			return ConditionReasonQuorumNotReadyWaitATerm, 0, nil
+		}
 		return r.downgradeQuorum(ctx, ts, quorum.NodesListConfigMap, stsObjectKey, int32(healthyNodes), int32(minRequiredNodes))
 	}
 
@@ -215,7 +225,7 @@ func (r *TypesenseClusterReconciler) downgradeQuorum(
 		return ConditionReasonQuorumNotReady, 0, err
 	}
 
-	_, size, err := r.updateConfigMap(ctx, ts, cm, ptr.To[int32](desiredReplicas))
+	_, size, _, err := r.updateConfigMap(ctx, ts, cm, ptr.To[int32](desiredReplicas), true)
 	if err != nil {
 		return ConditionReasonQuorumNotReady, 0, err
 	}
@@ -245,7 +255,7 @@ func (r *TypesenseClusterReconciler) upgradeQuorum(
 		return ConditionReasonQuorumNotReady, 0, err
 	}
 
-	_, _, err = r.updateConfigMap(ctx, ts, cm, &size)
+	_, _, _, err = r.updateConfigMap(ctx, ts, cm, &size, true)
 	if err != nil {
 		return ConditionReasonQuorumNotReady, 0, err
 	}

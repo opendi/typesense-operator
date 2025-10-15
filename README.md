@@ -20,7 +20,7 @@
 - Automates **Typesense** [lifecycle management](https://akyriako.github.io/typesense-operator-docs/docs/getting-started#key-features) (config maps, secrets, volumes, statefulsets, services, ingress, metrics, scrapers)
 - Automates **Raft quorum [configuration, discovery and recovery](https://akyriako.github.io/typesense-operator-docs/docs/how-it-works/recovering-a-cluster-that-has-lost-quorum)** without additional sidecars or manual interventions
 - Built with Go & Operator SDK — lightweight, Kubernetes-native, and flexible
-- Community-driven, with plethora of examples for Kind, CCE, AKS, EKS, and more
+- Community-driven, with plethora of examples for Kind, CCE, AKS, EKS, GCP, and more
 
 ## ⚡ Get Started
 
@@ -48,6 +48,25 @@ spec:
   replicas: 3
   storage:
     storageClassName: csi-disk
+```
+</details>
+
+<details>
+<summary>Quick example for bare metal K3s with Democratic CSI</summary>
+
+```yaml
+apiVersion: ts.opentelekomcloud.com/v1alpha1
+kind: TypesenseCluster
+metadata:
+  labels:
+    app.kubernetes.io/name: typesense-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: ts-bm-k3s
+spec:
+  image: typesense/typesense:29.0
+  replicas: 3
+  storage:
+    storageClassName: nfs
 ```
 </details>
 
@@ -119,6 +138,25 @@ spec:
 ```
 </details>
 
+<details>
+<summary>Quick example for GCP</summary>
+
+```yaml
+apiVersion: ts.opentelekomcloud.com/v1alpha1
+kind: TypesenseCluster
+metadata:
+  labels:
+    app.kubernetes.io/name: typesense-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: ts-gcp
+spec:
+  image: typesense/typesense:29.0
+  replicas: 3
+  storage:
+    storageClassName: standard-rwo
+```
+</details>
+
 You can find more examples and analytical installation instructions in the [Installation](https://akyriako.github.io/typesense-operator-docs/docs/installation/) and [Configuration](https://akyriako.github.io/typesense-operator-docs/docs/crds) guides.
 
 ## 📚 Documentation
@@ -137,7 +175,7 @@ Join the conversation:
 ## 📦 Project Status
 
 TyKO is an **independently maintained** project (not affiliated with Typesense, Inc.).
-- Latest version: **0.3.1**
+- Latest version: **0.3.3**
 - Tested on: Kubernetes 1.33 (earliest 1.26), Typesense 29.0 (earliest 26.0)
 - Contributions welcome! See [FAQ](https://akyriako.github.io/typesense-operator-docs/docs/faq) and [Development](https://akyriako.github.io/typesense-operator-docs/docs/development)
 

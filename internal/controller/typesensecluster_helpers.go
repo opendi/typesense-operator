@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+
 	tsv1alpha1 "github.com/akyriako/typesense-operator/api/v1alpha1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )

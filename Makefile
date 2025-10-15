@@ -52,7 +52,7 @@ OPERATOR_SDK_VERSION ?= v1.38.0
 # Image URL to use all building/pushing image targets
 DOCKER_HUB_NAME ?= $(shell docker info | sed '/Username:/!d;s/.* //')
 IMG_NAME ?= typesense-operator
-IMG_TAG ?= 0.3.1
+IMG_TAG ?= 0.3.3
 IMG ?= $(DOCKER_HUB_NAME)/$(IMG_NAME):$(IMG_TAG)
 
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
@@ -170,7 +170,7 @@ docker-buildx: ## Build and push docker image for the manager for cross-platform
 	rm Dockerfile.cross
 
 .PHONY: docker-release
-docker-release: docker-buildx
+docker-release:
 	$(CONTAINER_TOOL) tag ${IMG} $(DOCKER_HUB_NAME)/$(IMG_NAME):latest
 	$(CONTAINER_TOOL) push $(DOCKER_HUB_NAME)/$(IMG_NAME):latest
 
@@ -350,4 +350,5 @@ $(HELMIFY): $(LOCALBIN)
 helm: manifests kustomize helmify
 	$(KUSTOMIZE) build config/default | $(HELMIFY) -image-pull-secrets charts/typesense-operator
 	sed -i -e 's|^appVersion:.*|appVersion: "$(IMG_TAG)"|' -e 's|^version:.*|version: $(IMG_TAG)|' ./charts/typesense-operator/Chart.yaml
+	sed -i -E 's/(- Latest version: \*\*)[^*]+(\*\*)/\1$(IMG_TAG)\2/' ./README.md
 

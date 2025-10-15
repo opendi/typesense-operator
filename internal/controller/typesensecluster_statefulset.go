@@ -5,19 +5,21 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"strconv"
+	"strings"
+	"time"
+
 	tsv1alpha1 "github.com/akyriako/typesense-operator/api/v1alpha1"
 	"github.com/mitchellh/hashstructure/v2"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"strconv"
-	"strings"
-	"time"
 )
 
 const (
@@ -27,6 +29,7 @@ const (
 	hashAnnotationKey                  = "ts.opentelekomcloud.com/pod-template-hash"
 	readLagAnnotationKey               = "ts.opentelekomcloud.com/read-lag-threshold"
 	writeLagAnnotationKey              = "ts.opentelekomcloud.com/write-lag-threshold"
+	restartPodsAnnotationKey           = "kubectl.kubernetes.io/restartedAt"
 )
 
 func (r *TypesenseClusterReconciler) ReconcileStatefulSet(ctx context.Context, ts *tsv1alpha1.TypesenseCluster) (*appsv1.StatefulSet, error) {
@@ -82,7 +85,10 @@ func (r *TypesenseClusterReconciler) ReconcileStatefulSet(ctx context.Context, t
 				r.logger.Error(err, "building statefulset failed", "sts", stsObjectKey.Name)
 			}
 
-			if r.shouldUpdateStatefulSet(sts, desiredSts, ts) {
+			annotations := sts.Spec.Template.Annotations
+			delete(annotations, restartPodsAnnotationKey)
+
+			if r.shouldUpdateStatefulSet(sts, desiredSts, ts) || !apiequality.Semantic.DeepEqual(annotations, desiredSts.Spec.Template.Annotations) {
 				r.logger.V(debugLevel).Info("updating statefulset", "sts", sts.Name)
 
 				updatedSts, err := r.updateStatefulSet(ctx, sts, desiredSts)
@@ -99,7 +105,7 @@ func (r *TypesenseClusterReconciler) ReconcileStatefulSet(ctx context.Context, t
 					r.logger.V(debugLevel).Error(err, fmt.Sprintf("unable to fetch config map: %s", configMapName))
 				}
 
-				_, _, err = r.updateConfigMap(ctx, ts, cm, updatedSts.Spec.Replicas)
+				_, _, _, err = r.updateConfigMap(ctx, ts, cm, updatedSts.Spec.Replicas, true)
 				if err != nil {
 					r.logger.V(debugLevel).Error(err, fmt.Sprintf("unable to update config map: %s", configMapName))
 				}
@@ -107,6 +113,20 @@ func (r *TypesenseClusterReconciler) ReconcileStatefulSet(ctx context.Context, t
 				r.logLagThresholds(updatedSts)
 				return updatedSts, nil
 			}
+
+			//if !apiequality.Semantic.DeepEqual(sts.Spec.Template.Annotations, desiredSts.Spec.Template.Annotations){
+			//	r.logger.V(debugLevel).Info("updating statefulset pod annotations", "sts", sts.Name)
+			//
+			//	patch := client.MergeFrom(sts.DeepCopy())
+			//	sts.Spec.Template.Annotations = desiredSts.Spec.Template.Annotations
+			//
+			//	if err := r.Patch(ctx, sts, patch); err != nil {
+			//		return nil, err
+			//	}
+			//
+			//	r.logLagThresholds(sts)
+			//	return sts, nil
+			//}
 		}
 	}
 
@@ -155,7 +175,7 @@ func (r *TypesenseClusterReconciler) updateStatefulSet(ctx context.Context, sts 
 	if sts.Spec.Template.Annotations == nil {
 		sts.Spec.Template.Annotations = map[string]string{}
 	}
-	sts.Spec.Template.Annotations["kubectl.kubernetes.io/restartedAt"] = time.Now().Format(time.RFC3339)
+	sts.Spec.Template.Annotations[restartPodsAnnotationKey] = time.Now().Format(time.RFC3339)
 	sts.Spec.Template.Annotations[hashAnnotationKey] = desired.Spec.Template.Annotations[hashAnnotationKey]
 
 	if err := r.Patch(ctx, sts, patch); err != nil {
@@ -168,9 +188,14 @@ func (r *TypesenseClusterReconciler) updateStatefulSet(ctx context.Context, sts 
 func (r *TypesenseClusterReconciler) buildStatefulSet(ctx context.Context, key client.ObjectKey, ts *tsv1alpha1.TypesenseCluster) (*appsv1.StatefulSet, error) {
 	readLagThreshold, writeLagThreshold := r.getHealthyLagThresholds(ctx, ts)
 
-	lagThresholdAnnotations := make(map[string]string, 2)
-	lagThresholdAnnotations[readLagAnnotationKey] = strconv.Itoa(readLagThreshold)
-	lagThresholdAnnotations[writeLagAnnotationKey] = strconv.Itoa(writeLagThreshold)
+	podAnnotations := make(map[string]string)
+	podAnnotations[readLagAnnotationKey] = strconv.Itoa(readLagThreshold)
+	podAnnotations[writeLagAnnotationKey] = strconv.Itoa(writeLagThreshold)
+	if ts.Spec.PodAnnotations != nil {
+		for k, v := range ts.Spec.PodAnnotations {
+			podAnnotations[k] = v
+		}
+	}
 
 	clusterName := ts.Name
 	sts := &appsv1.StatefulSet{
@@ -184,7 +209,7 @@ func (r *TypesenseClusterReconciler) buildStatefulSet(ctx context.Context, key c
 				MatchLabels: getLabels(ts),
 			},
 			Template: corev1.PodTemplateSpec{
-				ObjectMeta: getObjectMeta(ts, &key.Name, lagThresholdAnnotations),
+				ObjectMeta: getObjectMeta(ts, &key.Name, podAnnotations),
 				Spec: corev1.PodSpec{
 					SecurityContext: &corev1.PodSecurityContext{
 						RunAsUser:    ptr.To[int64](10000),

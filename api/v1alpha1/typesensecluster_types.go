@@ -61,6 +61,15 @@ type TypesenseClusterSpec struct {
 	PeeringPort int `json:"peeringPort,omitempty"`
 
 	// +optional
+	// +kubebuilder:default=500
+	// +kubebuilder:validation:Minimum=500
+	// +kubebuilder:validation:Maximum=60000
+	// +kubebuilder:validation:ExclusiveMinimum=false
+	// +kubebuilder:validation:ExclusiveMaximum=false
+	// +kubebuilder:validation:Type=integer
+	HealthProbeTimeoutInMilliseconds int `json:"healthProbeTimeoutInMilliseconds,omitempty"`
+
+	// +optional
 	// +kubebuilder:default=true
 	// +kubebuilder:validation:Type=boolean
 	ResetPeersOnError bool `json:"resetPeersOnError,omitempty"`
@@ -87,6 +96,9 @@ type TypesenseClusterSpec struct {
 
 	// +kubebuilder:validation:Optional
 	AdditionalServerConfiguration *corev1.LocalObjectReference `json:"additionalServerConfiguration,omitempty"`
+
+	// +kubebuilder:validation:Optional
+	PodAnnotations map[string]string `json:"podAnnotations,omitempty"`
 
 	Storage *StorageSpec `json:"storage"`
 
@@ -187,7 +199,7 @@ type MetricsExporterSpec struct {
 	Release string `json:"release"`
 
 	// +kubebuilder:validation:Optional
-	// +kubebuilder:default:="akyriako78/typesense-prometheus-exporter:0.1.8"
+	// +kubebuilder:default:="akyriako78/typesense-prometheus-exporter:0.1.9"
 	Image string `json:"image,omitempty"`
 
 	// +optional
