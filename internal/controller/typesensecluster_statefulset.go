@@ -207,12 +207,17 @@ func (r *TypesenseClusterReconciler) buildStatefulSet(ctx context.Context, key c
 	}
 
 	clusterName := ts.Name
+	podManagementPolicy := appsv1.ParallelPodManagement
+	if ts.Spec.GetPodManagementPolicy() == "OrderedReady" {
+		podManagementPolicy = appsv1.OrderedReadyPodManagement
+	}
+
 	sts := &appsv1.StatefulSet{
 		TypeMeta:   metav1.TypeMeta{},
 		ObjectMeta: getObjectMeta(ts, &key.Name, stsAnnotations),
 		Spec: appsv1.StatefulSetSpec{
 			ServiceName:         fmt.Sprintf(ClusterHeadlessService, clusterName),
-			PodManagementPolicy: appsv1.ParallelPodManagement,
+			PodManagementPolicy: podManagementPolicy,
 			Replicas:            ptr.To[int32](ts.Spec.Replicas),
 			Selector: &metav1.LabelSelector{
 				MatchLabels: getLabels(ts),
@@ -225,7 +230,7 @@ func (r *TypesenseClusterReconciler) buildStatefulSet(ctx context.Context, key c
 						FSGroup:      ptr.To[int64](2000),
 						RunAsGroup:   ptr.To[int64](3000),
 						RunAsNonRoot: ptr.To[bool](true)},
-					TerminationGracePeriodSeconds: ptr.To[int64](5),
+					TerminationGracePeriodSeconds: ptr.To[int64](ts.Spec.GetTerminationGracePeriodSeconds()),
 					ReadinessGates: []corev1.PodReadinessGate{
 						{
 							ConditionType: QuorumReadinessGateCondition,

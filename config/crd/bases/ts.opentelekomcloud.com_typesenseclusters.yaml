@@ -1114,6 +1114,18 @@ spec:
               incrementalQuorumRecovery:
                 default: false
                 type: boolean
+              podManagementPolicy:
+                default: Parallel
+                enum:
+                - OrderedReady
+                - Parallel
+                type: string
+              terminationGracePeriodSeconds:
+                default: 5
+                format: int64
+                maximum: 300
+                minimum: 1
+                type: integer
               ingress:
                 properties:
                   annotations:

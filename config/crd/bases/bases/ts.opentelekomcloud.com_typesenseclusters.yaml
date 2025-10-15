@@ -1,11 +1,10 @@
+---
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
-  name: typesenseclusters.ts.opentelekomcloud.com
   annotations:
     controller-gen.kubebuilder.io/version: v0.15.0
-  labels:
-  {{- include "typesense-operator.labels" . | nindent 4 }}
+  name: typesenseclusters.ts.opentelekomcloud.com
 spec:
   group: ts.opentelekomcloud.com
   names:
@@ -83,8 +82,8 @@ spec:
                   in any namespace
                 properties:
                   name:
-                    description: name is unique within a namespace to reference a secret
-                      resource.
+                    description: name is unique within a namespace to reference a
+                      secret resource.
                     type: string
                   namespace:
                     description: namespace defines the space within which the secret
@@ -96,7 +95,8 @@ spec:
                 description: Affinity is a group of affinity scheduling rules.
                 properties:
                   nodeAffinity:
-                    description: Describes node affinity scheduling rules for the pod.
+                    description: Describes node affinity scheduling rules for the
+                      pod.
                     properties:
                       preferredDuringSchedulingIgnoredDuringExecution:
                         description: |-
@@ -208,8 +208,8 @@ spec:
                           may or may not try to eventually evict the pod from its node.
                         properties:
                           nodeSelectorTerms:
-                            description: Required. A list of node selector terms. The
-                              terms are ORed.
+                            description: Required. A list of node selector terms.
+                              The terms are ORed.
                             items:
                               description: |-
                                 A null or empty node selector term matches no objects. The requirements of
@@ -331,8 +331,8 @@ spec:
                                           relates the key and values.
                                         properties:
                                           key:
-                                            description: key is the label key that the
-                                              selector applies to.
+                                            description: key is the label key that
+                                              the selector applies to.
                                             type: string
                                           operator:
                                             description: |-
@@ -413,8 +413,8 @@ spec:
                                           relates the key and values.
                                         properties:
                                           key:
-                                            description: key is the label key that the
-                                              selector applies to.
+                                            description: key is the label key that
+                                              the selector applies to.
                                             type: string
                                           operator:
                                             description: |-
@@ -504,16 +504,16 @@ spec:
                                 If it's null, this PodAffinityTerm matches with no Pods.
                               properties:
                                 matchExpressions:
-                                  description: matchExpressions is a list of label selector
-                                    requirements. The requirements are ANDed.
+                                  description: matchExpressions is a list of label
+                                    selector requirements. The requirements are ANDed.
                                   items:
                                     description: |-
                                       A label selector requirement is a selector that contains values, a key, and an operator that
                                       relates the key and values.
                                     properties:
                                       key:
-                                        description: key is the label key that the selector
-                                          applies to.
+                                        description: key is the label key that the
+                                          selector applies to.
                                         type: string
                                       operator:
                                         description: |-
@@ -585,16 +585,16 @@ spec:
                                 An empty selector ({}) matches all namespaces.
                               properties:
                                 matchExpressions:
-                                  description: matchExpressions is a list of label selector
-                                    requirements. The requirements are ANDed.
+                                  description: matchExpressions is a list of label
+                                    selector requirements. The requirements are ANDed.
                                   items:
                                     description: |-
                                       A label selector requirement is a selector that contains values, a key, and an operator that
                                       relates the key and values.
                                     properties:
                                       key:
-                                        description: key is the label key that the selector
-                                          applies to.
+                                        description: key is the label key that the
+                                          selector applies to.
                                         type: string
                                       operator:
                                         description: |-
@@ -653,8 +653,8 @@ spec:
                     type: object
                   podAntiAffinity:
                     description: Describes pod anti-affinity scheduling rules (e.g.
-                      avoid putting this pod in the same node, zone, etc. as some other
-                      pod(s)).
+                      avoid putting this pod in the same node, zone, etc. as some
+                      other pod(s)).
                     properties:
                       preferredDuringSchedulingIgnoredDuringExecution:
                         description: |-
@@ -690,8 +690,8 @@ spec:
                                           relates the key and values.
                                         properties:
                                           key:
-                                            description: key is the label key that the
-                                              selector applies to.
+                                            description: key is the label key that
+                                              the selector applies to.
                                             type: string
                                           operator:
                                             description: |-
@@ -772,8 +772,8 @@ spec:
                                           relates the key and values.
                                         properties:
                                           key:
-                                            description: key is the label key that the
-                                              selector applies to.
+                                            description: key is the label key that
+                                              the selector applies to.
                                             type: string
                                           operator:
                                             description: |-
@@ -863,16 +863,16 @@ spec:
                                 If it's null, this PodAffinityTerm matches with no Pods.
                               properties:
                                 matchExpressions:
-                                  description: matchExpressions is a list of label selector
-                                    requirements. The requirements are ANDed.
+                                  description: matchExpressions is a list of label
+                                    selector requirements. The requirements are ANDed.
                                   items:
                                     description: |-
                                       A label selector requirement is a selector that contains values, a key, and an operator that
                                       relates the key and values.
                                     properties:
                                       key:
-                                        description: key is the label key that the selector
-                                          applies to.
+                                        description: key is the label key that the
+                                          selector applies to.
                                         type: string
                                       operator:
                                         description: |-
@@ -944,16 +944,16 @@ spec:
                                 An empty selector ({}) matches all namespaces.
                               properties:
                                 matchExpressions:
-                                  description: matchExpressions is a list of label selector
-                                    requirements. The requirements are ANDed.
+                                  description: matchExpressions is a list of label
+                                    selector requirements. The requirements are ANDed.
                                   items:
                                     description: |-
                                       A label selector requirement is a selector that contains values, a key, and an operator that
                                       relates the key and values.
                                     properties:
                                       key:
-                                        description: key is the label key that the selector
-                                          applies to.
+                                        description: key is the label key that the
+                                          selector applies to.
                                         type: string
                                       operator:
                                         description: |-
@@ -1040,12 +1040,12 @@ spec:
                         description: |-
                           Claims lists the names of resources, defined in spec.resourceClaims,
                           that are used by this container.
-  
-  
+
+
                           This is an alpha field and requires enabling the
                           DynamicResourceAllocation feature gate.
-  
-  
+
+
                           This field is immutable. It can only be set for containers.
                         items:
                           description: ResourceClaim references one entry in PodSpec.ResourceClaims.
@@ -1091,41 +1091,9 @@ spec:
                 type: object
               image:
                 type: string
-              imagePullSecrets:
-                items:
-                  description: |-
-                    LocalObjectReference contains enough information to let you locate the
-                    referenced object inside the same namespace.
-                  properties:
-                    name:
-                      default: ""
-                      description: |-
-                        Name of the referent.
-                        This field is effectively required, but due to backwards compatibility is
-                        allowed to be empty. Instances of this type with an empty value here are
-                        almost certainly wrong.
-                        TODO: Add other useful fields. apiVersion, kind, uid?
-                        More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                        TODO: Drop `kubebuilder:default` when controller-gen doesn't need it https://github.com/kubernetes-sigs/kubebuilder/issues/3896.
-                      type: string
-                  type: object
-                  x-kubernetes-map-type: atomic
-                type: array
               incrementalQuorumRecovery:
                 default: false
                 type: boolean
-              podManagementPolicy:
-                default: Parallel
-                enum:
-                - OrderedReady
-                - Parallel
-                type: string
-              terminationGracePeriodSeconds:
-                default: 5
-                format: int64
-                maximum: 300
-                minimum: 1
-                type: integer
               ingress:
                 properties:
                   annotations:
@@ -1151,8 +1119,8 @@ spec:
                     type: string
                   pathType:
                     default: ImplementationSpecific
-                    description: PathType represents the type of path referred to by
-                      a HTTPIngressPath.
+                    description: PathType represents the type of path referred to
+                      by a HTTPIngressPath.
                     enum:
                     - Exact
                     - Prefix
@@ -1314,8 +1282,8 @@ spec:
                                 description: |-
                                   type indicates which kind of seccomp profile will be applied.
                                   Valid options are:
-  
-  
+
+
                                   Localhost - a profile defined in a file on the node should be used.
                                   RuntimeDefault - the container runtime default profile should be used.
                                   Unconfined - no profile should be applied.
@@ -1337,8 +1305,8 @@ spec:
                                   GMSA credential spec named by the GMSACredentialSpecName field.
                                 type: string
                               gmsaCredentialSpecName:
-                                description: GMSACredentialSpecName is the name of the
-                                  GMSA credential spec to use.
+                                description: GMSACredentialSpecName is the name of
+                                  the GMSA credential spec to use.
                                 type: string
                               hostProcess:
                                 description: |-
@@ -1387,23 +1355,23 @@ spec:
                               description: |-
                                 RecursiveReadOnly specifies whether read-only mounts should be handled
                                 recursively.
-  
-  
+
+
                                 If ReadOnly is false, this field has no meaning and must be unspecified.
-  
-  
+
+
                                 If ReadOnly is true, and this field is set to Disabled, the mount is not made
                                 recursively read-only.  If this field is set to IfPossible, the mount is made
                                 recursively read-only, if it is supported by the container runtime.  If this
                                 field is set to Enabled, the mount is made recursively read-only if it is
                                 supported by the container runtime, otherwise the pod will not be started and
                                 an error will be generated to indicate the reason.
-  
-  
+
+
                                 If this field is set to IfPossible or Enabled, MountPropagation must be set to
                                 None (or be unspecified, which defaults to None).
-  
-  
+
+
                                 If this field is not specified, it is treated as an equivalent of Disabled.
                               type: string
                             subPath:
@@ -1464,8 +1432,8 @@ spec:
                               - volumeID
                               type: object
                             azureDisk:
-                              description: azureDisk represents an Azure Data Disk mount
-                                on the host and bind mount to the pod.
+                              description: azureDisk represents an Azure Data Disk
+                                mount on the host and bind mount to the pod.
                               properties:
                                 cachingMode:
                                   description: 'cachingMode is the Host Caching mode:
@@ -1476,8 +1444,8 @@ spec:
                                     in the blob storage
                                   type: string
                                 diskURI:
-                                  description: diskURI is the URI of data disk in the
-                                    blob storage
+                                  description: diskURI is the URI of data disk in
+                                    the blob storage
                                   type: string
                                 fsType:
                                   description: |-
@@ -1488,9 +1456,9 @@ spec:
                                 kind:
                                   description: 'kind expected values are Shared: multiple
                                     blob disks per storage account  Dedicated: single
-                                    blob disk per storage account  Managed: azure managed
-                                    data disk (only in managed availability set). defaults
-                                    to shared'
+                                    blob disk per storage account  Managed: azure
+                                    managed data disk (only in managed availability
+                                    set). defaults to shared'
                                   type: string
                                 readOnly:
                                   description: |-
@@ -1535,8 +1503,8 @@ spec:
                                   x-kubernetes-list-type: atomic
                                 path:
                                   description: 'path is Optional: Used as the mounted
-                                    root, rather than the full Ceph tree, default is
-                                    /'
+                                    root, rather than the full Ceph tree, default
+                                    is /'
                                   type: string
                                 readOnly:
                                   description: |-
@@ -1762,17 +1730,19 @@ spec:
                                   description: Items is a list of downward API volume
                                     file
                                   items:
-                                    description: DownwardAPIVolumeFile represents information
-                                      to create the file containing the pod field
+                                    description: DownwardAPIVolumeFile represents
+                                      information to create the file containing the
+                                      pod field
                                     properties:
                                       fieldRef:
-                                        description: 'Required: Selects a field of the
-                                          pod: only annotations, labels, name, namespace
-                                          and uid are supported.'
+                                        description: 'Required: Selects a field of
+                                          the pod: only annotations, labels, name,
+                                          namespace and uid are supported.'
                                         properties:
                                           apiVersion:
-                                            description: Version of the schema the FieldPath
-                                              is written in terms of, defaults to "v1".
+                                            description: Version of the schema the
+                                              FieldPath is written in terms of, defaults
+                                              to "v1".
                                             type: string
                                           fieldPath:
                                             description: Path of the field to select
@@ -1796,8 +1766,8 @@ spec:
                                         description: 'Required: Path is  the relative
                                           path name of the file to be created. Must
                                           not be absolute or contain the ''..'' path.
-                                          Must be utf-8 encoded. The first item of the
-                                          relative path must not start with ''..'''
+                                          Must be utf-8 encoded. The first item of
+                                          the relative path must not start with ''..'''
                                         type: string
                                       resourceFieldRef:
                                         description: |-
@@ -1805,8 +1775,8 @@ spec:
                                           (limits.cpu, limits.memory, requests.cpu and requests.memory) are currently supported.
                                         properties:
                                           containerName:
-                                            description: 'Container name: required for
-                                              volumes, optional for env vars'
+                                            description: 'Container name: required
+                                              for volumes, optional for env vars'
                                             type: string
                                           divisor:
                                             anyOf:
@@ -1861,8 +1831,8 @@ spec:
                                 ephemeral represents a volume that is handled by a cluster storage driver.
                                 The volume's lifecycle is tied to the pod that defines it - it will be created before the pod starts,
                                 and deleted when the pod is removed.
-  
-  
+
+
                                 Use this if:
                                 a) the volume is only needed while the pod runs,
                                 b) features of normal volumes like restoring from snapshot or capacity
@@ -1872,18 +1842,18 @@ spec:
                                    a PersistentVolumeClaim (see EphemeralVolumeSource for more
                                    information on the connection between this volume type
                                    and PersistentVolumeClaim).
-  
-  
+
+
                                 Use PersistentVolumeClaim or one of the vendor-specific
                                 APIs for volumes that persist for longer than the lifecycle
                                 of an individual pod.
-  
-  
+
+
                                 Use CSI for light-weight local ephemeral volumes if the CSI driver is meant to
                                 be used that way - see the documentation of the driver for
                                 more information.
-  
-  
+
+
                                 A pod can use both types of ephemeral volumes and
                                 persistent volumes at the same time.
                               properties:
@@ -1896,8 +1866,8 @@ spec:
                                     `<volume name>` is the name from the `PodSpec.Volumes` array
                                     entry. Pod validation will reject the pod if the concatenated name
                                     is not valid for a PVC (for example, too long).
-  
-  
+
+
                                     An existing PVC with that name that is not owned by the pod
                                     will *not* be used for the pod to avoid using an unrelated
                                     volume by mistake. Starting the pod is then blocked until
@@ -1906,12 +1876,12 @@ spec:
                                     owner reference to the pod once the pod exists. Normally
                                     this should not be necessary, but it may be useful when
                                     manually reconstructing a broken cluster.
-  
-  
+
+
                                     This field is read-only and no changes will be made by Kubernetes
                                     to the PVC after it has been created.
-  
-  
+
+
                                     Required, must not be nil.
                                   properties:
                                     metadata:
@@ -2062,8 +2032,9 @@ spec:
                                                   relates the key and values.
                                                 properties:
                                                   key:
-                                                    description: key is the label key
-                                                      that the selector applies to.
+                                                    description: key is the label
+                                                      key that the selector applies
+                                                      to.
                                                     type: string
                                                   operator:
                                                     description: |-
@@ -2131,9 +2102,9 @@ spec:
                                   type: object
                               type: object
                             fc:
-                              description: fc represents a Fibre Channel resource that
-                                is attached to a kubelet's host machine and then exposed
-                                to the pod.
+                              description: fc represents a Fibre Channel resource
+                                that is attached to a kubelet's host machine and then
+                                exposed to the pod.
                               properties:
                                 fsType:
                                   description: |-
@@ -2152,8 +2123,8 @@ spec:
                                     the ReadOnly setting in VolumeMounts.
                                   type: boolean
                                 targetWWNs:
-                                  description: 'targetWWNs is Optional: FC target worldwide
-                                    names (WWNs)'
+                                  description: 'targetWWNs is Optional: FC target
+                                    worldwide names (WWNs)'
                                   items:
                                     type: string
                                   type: array
@@ -2173,8 +2144,8 @@ spec:
                                 provisioned/attached using an exec based plugin.
                               properties:
                                 driver:
-                                  description: driver is the name of the driver to use
-                                    for this volume.
+                                  description: driver is the name of the driver to
+                                    use for this volume.
                                   type: string
                                 fsType:
                                   description: |-
@@ -2287,8 +2258,8 @@ spec:
                                   description: repository is the URL
                                   type: string
                                 revision:
-                                  description: revision is the commit hash for the specified
-                                    revision.
+                                  description: revision is the commit hash for the
+                                    specified revision.
                                   type: string
                               required:
                               - repository
@@ -2531,22 +2502,22 @@ spec:
                                 sources:
                                   description: sources is the list of volume projections
                                   items:
-                                    description: Projection that may be projected along
-                                      with other supported volume types
+                                    description: Projection that may be projected
+                                      along with other supported volume types
                                     properties:
                                       clusterTrustBundle:
                                         description: |-
                                           ClusterTrustBundle allows a pod to access the `.spec.trustBundle` field
                                           of ClusterTrustBundle objects in an auto-updating file.
-  
-  
+
+
                                           Alpha, gated by the ClusterTrustBundleProjection feature gate.
-  
-  
+
+
                                           ClusterTrustBundle objects can either be selected by name, or by the
                                           combination of signer name and a label selector.
-  
-  
+
+
                                           Kubelet performs aggressive normalization of the PEM contents written
                                           into the pod filesystem.  Esoteric PEM features such as inter-block
                                           comments and block headers are stripped.  Certificates are deduplicated.
@@ -2561,9 +2532,9 @@ spec:
                                               everything".
                                             properties:
                                               matchExpressions:
-                                                description: matchExpressions is a list
-                                                  of label selector requirements. The
-                                                  requirements are ANDed.
+                                                description: matchExpressions is a
+                                                  list of label selector requirements.
+                                                  The requirements are ANDed.
                                                 items:
                                                   description: |-
                                                     A label selector requirement is a selector that contains values, a key, and an operator that
@@ -2645,8 +2616,8 @@ spec:
                                               the volume setup will error unless it is marked optional. Paths must be
                                               relative and may not contain the '..' path or start with '..'.
                                             items:
-                                              description: Maps a string key to a path
-                                                within a volume.
+                                              description: Maps a string key to a
+                                                path within a volume.
                                               properties:
                                                 key:
                                                   description: key is the key to project.
@@ -2686,14 +2657,14 @@ spec:
                                               TODO: Drop `kubebuilder:default` when controller-gen doesn't need it https://github.com/kubernetes-sigs/kubebuilder/issues/3896.
                                             type: string
                                           optional:
-                                            description: optional specify whether the
-                                              ConfigMap or its keys must be defined
+                                            description: optional specify whether
+                                              the ConfigMap or its keys must be defined
                                             type: boolean
                                         type: object
                                         x-kubernetes-map-type: atomic
                                       downwardAPI:
-                                        description: downwardAPI information about the
-                                          downwardAPI data to project
+                                        description: downwardAPI information about
+                                          the downwardAPI data to project
                                         properties:
                                           items:
                                             description: Items is a list of DownwardAPIVolume
@@ -2704,20 +2675,20 @@ spec:
                                                 the pod field
                                               properties:
                                                 fieldRef:
-                                                  description: 'Required: Selects a
-                                                    field of the pod: only annotations,
+                                                  description: 'Required: Selects
+                                                    a field of the pod: only annotations,
                                                     labels, name, namespace and uid
                                                     are supported.'
                                                   properties:
                                                     apiVersion:
-                                                      description: Version of the schema
-                                                        the FieldPath is written in
-                                                        terms of, defaults to "v1".
+                                                      description: Version of the
+                                                        schema the FieldPath is written
+                                                        in terms of, defaults to "v1".
                                                       type: string
                                                     fieldPath:
                                                       description: Path of the field
-                                                        to select in the specified API
-                                                        version.
+                                                        to select in the specified
+                                                        API version.
                                                       type: string
                                                   required:
                                                   - fieldPath
@@ -2735,12 +2706,12 @@ spec:
                                                   type: integer
                                                 path:
                                                   description: 'Required: Path is  the
-                                                    relative path name of the file to
-                                                    be created. Must not be absolute
+                                                    relative path name of the file
+                                                    to be created. Must not be absolute
                                                     or contain the ''..'' path. Must
                                                     be utf-8 encoded. The first item
-                                                    of the relative path must not start
-                                                    with ''..'''
+                                                    of the relative path must not
+                                                    start with ''..'''
                                                   type: string
                                                 resourceFieldRef:
                                                   description: |-
@@ -2776,8 +2747,8 @@ spec:
                                             x-kubernetes-list-type: atomic
                                         type: object
                                       secret:
-                                        description: secret information about the secret
-                                          data to project
+                                        description: secret information about the
+                                          secret data to project
                                         properties:
                                           items:
                                             description: |-
@@ -2789,8 +2760,8 @@ spec:
                                               the volume setup will error unless it is marked optional. Paths must be
                                               relative and may not contain the '..' path or start with '..'.
                                             items:
-                                              description: Maps a string key to a path
-                                                within a volume.
+                                              description: Maps a string key to a
+                                                path within a volume.
                                               properties:
                                                 key:
                                                   description: key is the key to project.
@@ -2899,8 +2870,8 @@ spec:
                                     Defaults to serivceaccount user
                                   type: string
                                 volume:
-                                  description: volume is a string that references an
-                                    already created Quobyte volume by name.
+                                  description: volume is a string that references
+                                    an already created Quobyte volume by name.
                                   type: string
                               required:
                               - registry
@@ -2981,8 +2952,8 @@ spec:
                               - monitors
                               type: object
                             scaleIO:
-                              description: scaleIO represents a ScaleIO persistent volume
-                                attached and mounted on Kubernetes nodes.
+                              description: scaleIO represents a ScaleIO persistent
+                                volume attached and mounted on Kubernetes nodes.
                               properties:
                                 fsType:
                                   description: |-
@@ -2992,12 +2963,12 @@ spec:
                                     Default is "xfs".
                                   type: string
                                 gateway:
-                                  description: gateway is the host address of the ScaleIO
-                                    API Gateway.
+                                  description: gateway is the host address of the
+                                    ScaleIO API Gateway.
                                   type: string
                                 protectionDomain:
-                                  description: protectionDomain is the name of the ScaleIO
-                                    Protection Domain for the configured storage.
+                                  description: protectionDomain is the name of the
+                                    ScaleIO Protection Domain for the configured storage.
                                   type: string
                                 readOnly:
                                   description: |-
@@ -3023,8 +2994,8 @@ spec:
                                   type: object
                                   x-kubernetes-map-type: atomic
                                 sslEnabled:
-                                  description: sslEnabled Flag enable/disable SSL communication
-                                    with Gateway, default false
+                                  description: sslEnabled Flag enable/disable SSL
+                                    communication with Gateway, default false
                                   type: boolean
                                 storageMode:
                                   description: |-
@@ -3032,8 +3003,8 @@ spec:
                                     Default is ThinProvisioned.
                                   type: string
                                 storagePool:
-                                  description: storagePool is the ScaleIO Storage Pool
-                                    associated with the protection domain.
+                                  description: storagePool is the ScaleIO Storage
+                                    Pool associated with the protection domain.
                                   type: string
                                 system:
                                   description: system is the name of the storage system
@@ -3105,8 +3076,8 @@ spec:
                                   type: array
                                   x-kubernetes-list-type: atomic
                                 optional:
-                                  description: optional field specify whether the Secret
-                                    or its keys must be defined
+                                  description: optional field specify whether the
+                                    Secret or its keys must be defined
                                   type: boolean
                                 secretName:
                                   description: |-
@@ -3115,8 +3086,8 @@ spec:
                                   type: string
                               type: object
                             storageos:
-                              description: storageOS represents a StorageOS volume attached
-                                and mounted on Kubernetes nodes.
+                              description: storageOS represents a StorageOS volume
+                                attached and mounted on Kubernetes nodes.
                               properties:
                                 fsType:
                                   description: |-
@@ -3174,8 +3145,8 @@ spec:
                                   type: string
                                 storagePolicyID:
                                   description: storagePolicyID is the storage Policy
-                                    Based Management (SPBM) profile ID associated with
-                                    the StoragePolicyName.
+                                    Based Management (SPBM) profile ID associated
+                                    with the StoragePolicyName.
                                   type: string
                                 storagePolicyName:
                                   description: storagePolicyName is the storage Policy
@@ -3204,12 +3175,12 @@ spec:
                         description: |-
                           Claims lists the names of resources, defined in spec.resourceClaims,
                           that are used by this container.
-  
-  
+
+
                           This is an alpha field and requires enabling the
                           DynamicResourceAllocation feature gate.
-  
-  
+
+
                           This field is immutable. It can only be set for containers.
                         items:
                           description: ResourceClaim references one entry in PodSpec.ResourceClaims.
@@ -3280,12 +3251,12 @@ spec:
                         description: |-
                           Claims lists the names of resources, defined in spec.resourceClaims,
                           that are used by this container.
-  
-  
+
+
                           This is an alpha field and requires enabling the
                           DynamicResourceAllocation feature gate.
-  
-  
+
+
                           This field is immutable. It can only be set for containers.
                         items:
                           description: ResourceClaim references one entry in PodSpec.ResourceClaims.
@@ -3345,10 +3316,11 @@ spec:
                 additionalProperties:
                   type: string
                 type: object
-              podsInheritStatefulSetAnnotations:
-                default: false
-                type: boolean
-              priorityClassName:
+              podManagementPolicy:
+                default: Parallel
+                enum:
+                - OrderedReady
+                - Parallel
                 type: string
               replicas:
                 default: 3
@@ -3371,12 +3343,12 @@ spec:
                     description: |-
                       Claims lists the names of resources, defined in spec.resourceClaims,
                       that are used by this container.
-  
-  
+
+
                       This is an alpha field and requires enabling the
                       DynamicResourceAllocation feature gate.
-  
-  
+
+
                       This field is immutable. It can only be set for containers.
                     items:
                       description: ResourceClaim references one entry in PodSpec.ResourceClaims.
@@ -3456,10 +3428,6 @@ spec:
                   - schedule
                   type: object
                 type: array
-              statefulSetAnnotations:
-                additionalProperties:
-                  type: string
-                type: object
               storage:
                 properties:
                   size:
@@ -3474,6 +3442,12 @@ spec:
                 required:
                 - storageClassName
                 type: object
+              terminationGracePeriodSeconds:
+                default: 5
+                format: int64
+                maximum: 300
+                minimum: 1
+                type: integer
               tolerations:
                 items:
                   description: |-
@@ -3576,8 +3550,8 @@ spec:
                         MatchLabelKeys cannot be set when LabelSelector isn't set.
                         Keys that don't exist in the incoming pod labels will
                         be ignored. A null or empty list means only match against labelSelector.
-  
-  
+
+
                         This is a beta field and requires the MatchLabelKeysInPodTopologySpread feature gate to be enabled (enabled by default).
                       items:
                         type: string
@@ -3616,8 +3590,8 @@ spec:
                         If value is nil, the constraint behaves as if MinDomains is equal to 1.
                         Valid values are integers greater than 0.
                         When value is not nil, WhenUnsatisfiable must be DoNotSchedule.
-  
-  
+
+
                         For example, in a 3-zone cluster, MaxSkew is set to 2, MinDomains is set to 5 and pods with the same
                         labelSelector spread as 2/2/2:
                         | zone1 | zone2 | zone3 |
@@ -3634,8 +3608,8 @@ spec:
                         when calculating pod topology spread skew. Options are:
                         - Honor: only nodes matching nodeAffinity/nodeSelector are included in the calculations.
                         - Ignore: nodeAffinity/nodeSelector are ignored. All nodes are included in the calculations.
-  
-  
+
+
                         If this value is nil, the behavior is equivalent to the Honor policy.
                         This is a beta-level feature default enabled by the NodeInclusionPolicyInPodTopologySpread feature flag.
                       type: string
@@ -3646,8 +3620,8 @@ spec:
                         - Honor: nodes without taints, along with tainted nodes for which the incoming pod
                         has a toleration, are included.
                         - Ignore: node taints are ignored. All nodes are included.
-  
-  
+
+
                         If this value is nil, the behavior is equivalent to the Ignore policy.
                         This is a beta-level feature default enabled by the NodeInclusionPolicyInPodTopologySpread feature flag.
                       type: string
@@ -3701,13 +3675,13 @@ spec:
               conditions:
                 items:
                   description: "Condition contains details for one aspect of the current
-                    state of this API Resource.\n---\nThis struct is intended for direct
-                    use as an array at the field path .status.conditions.  For example,\n\n\n\ttype
-                    FooStatus struct{\n\t    // Represents the observations of a foo's
-                    current state.\n\t    // Known .status.conditions.type are: \"Available\",
-                    \"Progressing\", and \"Degraded\"\n\t    // +patchMergeKey=type\n\t
-                    \   // +patchStrategy=merge\n\t    // +listType=map\n\t    // +listMapKey=type\n\t
-                    \   Conditions []metav1.Condition `json:\"conditions,omitempty\"
+                    state of this API Resource.\n---\nThis struct is intended for
+                    direct use as an array at the field path .status.conditions.  For
+                    example,\n\n\n\ttype FooStatus struct{\n\t    // Represents the
+                    observations of a foo's current state.\n\t    // Known .status.conditions.type
+                    are: \"Available\", \"Progressing\", and \"Degraded\"\n\t    //
+                    +patchMergeKey=type\n\t    // +patchStrategy=merge\n\t    // +listType=map\n\t
+                    \   // +listMapKey=type\n\t    Conditions []metav1.Condition `json:\"conditions,omitempty\"
                     patchStrategy:\"merge\" patchMergeKey:\"type\" protobuf:\"bytes,1,rep,name=conditions\"`\n\n\n\t
                     \   // other fields\n\t}"
                   properties:
@@ -3775,9 +3749,3 @@ spec:
     storage: true
     subresources:
       status: {}
-status:
-  acceptedNames:
-    kind: ""
-    plural: ""
-  conditions: []
-  storedVersions: []

@@ -132,6 +132,19 @@ type TypesenseClusterSpec struct {
 	// +kubebuilder:default=false
 	// +kubebuilder:validation:Type=boolean
 	IncrementalQuorumRecovery bool `json:"incrementalQuorumRecovery,omitempty"`
+
+	// +optional
+	// +kubebuilder:default="Parallel"
+	// +kubebuilder:validation:Enum=OrderedReady;Parallel
+	// +kubebuilder:validation:Type=string
+	PodManagementPolicy *string `json:"podManagementPolicy,omitempty"`
+
+	// +optional
+	// +kubebuilder:default=5
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=300
+	// +kubebuilder:validation:Type=integer
+	TerminationGracePeriodSeconds *int64 `json:"terminationGracePeriodSeconds,omitempty"`
 }
 
 // TypesenseClusterStatus defines the observed state of TypesenseCluster
