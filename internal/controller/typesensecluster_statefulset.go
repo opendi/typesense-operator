@@ -85,11 +85,22 @@ func (r *TypesenseClusterReconciler) ReconcileStatefulSet(ctx context.Context, t
 				r.logger.Error(err, "building statefulset failed", "sts", stsObjectKey.Name)
 			}
 
-			annotations := sts.Spec.Template.Annotations
-			delete(annotations, restartPodsAnnotationKey)
+			stsAnnotations := sts.ObjectMeta.Annotations
+			podAnnotations := sts.Spec.Template.Annotations
+			delete(podAnnotations, restartPodsAnnotationKey)
 
-			if r.shouldUpdateStatefulSet(sts, desiredSts, ts) || !apiequality.Semantic.DeepEqual(annotations, desiredSts.Spec.Template.Annotations) {
+			if r.shouldUpdateStatefulSet(sts, desiredSts, ts) ||
+				!apiequality.Semantic.DeepEqual(podAnnotations, desiredSts.Spec.Template.Annotations) ||
+				!apiequality.Semantic.DeepEqual(stsAnnotations, desiredSts.ObjectMeta.Annotations) {
+
 				r.logger.V(debugLevel).Info("updating statefulset", "sts", sts.Name)
+
+				oldImage := strings.Replace(sts.Spec.Template.Spec.Containers[0].Image, "typesense/typesense:", "", -1)
+				newImage := strings.Replace(desiredSts.Spec.Template.Spec.Containers[0].Image, "typesense/typesense:", "", -1)
+				if oldImage != newImage {
+					r.logger.V(debugLevel).Info("scheduling typesense update", "current", oldImage, "target", newImage)
+					r.Recorder.Eventf(ts, "Normal", "TypesenseVersionUpdate", "Scheduled update from %s to %s", oldImage, newImage)
+				}
 
 				updatedSts, err := r.updateStatefulSet(ctx, sts, desiredSts)
 				if err != nil {
@@ -113,20 +124,6 @@ func (r *TypesenseClusterReconciler) ReconcileStatefulSet(ctx context.Context, t
 				r.logLagThresholds(updatedSts)
 				return updatedSts, nil
 			}
-
-			//if !apiequality.Semantic.DeepEqual(sts.Spec.Template.Annotations, desiredSts.Spec.Template.Annotations){
-			//	r.logger.V(debugLevel).Info("updating statefulset pod annotations", "sts", sts.Name)
-			//
-			//	patch := client.MergeFrom(sts.DeepCopy())
-			//	sts.Spec.Template.Annotations = desiredSts.Spec.Template.Annotations
-			//
-			//	if err := r.Patch(ctx, sts, patch); err != nil {
-			//		return nil, err
-			//	}
-			//
-			//	r.logLagThresholds(sts)
-			//	return sts, nil
-			//}
 		}
 	}
 
@@ -172,6 +169,8 @@ func (r *TypesenseClusterReconciler) updateStatefulSet(ctx context.Context, sts 
 	patch := client.MergeFrom(sts.DeepCopy())
 	sts.Spec = desired.Spec
 
+	sts.ObjectMeta.Annotations = desired.ObjectMeta.Annotations
+
 	if sts.Spec.Template.Annotations == nil {
 		sts.Spec.Template.Annotations = map[string]string{}
 	}
@@ -197,10 +196,20 @@ func (r *TypesenseClusterReconciler) buildStatefulSet(ctx context.Context, key c
 		}
 	}
 
+	stsAnnotations := make(map[string]string)
+	if ts.Spec.StatefulSetAnnotations != nil {
+		for k, v := range ts.Spec.StatefulSetAnnotations {
+			stsAnnotations[k] = v
+			if ts.Spec.PodsInheritStatefulSetAnnotations {
+				podAnnotations[k] = v
+			}
+		}
+	}
+
 	clusterName := ts.Name
 	sts := &appsv1.StatefulSet{
 		TypeMeta:   metav1.TypeMeta{},
-		ObjectMeta: getObjectMeta(ts, &key.Name, nil),
+		ObjectMeta: getObjectMeta(ts, &key.Name, stsAnnotations),
 		Spec: appsv1.StatefulSetSpec{
 			ServiceName:         fmt.Sprintf(ClusterHeadlessService, clusterName),
 			PodManagementPolicy: appsv1.ParallelPodManagement,
@@ -222,6 +231,8 @@ func (r *TypesenseClusterReconciler) buildStatefulSet(ctx context.Context, key c
 							ConditionType: QuorumReadinessGateCondition,
 						},
 					},
+					PriorityClassName: ptr.Deref[string](ts.Spec.PriorityClassName, ""),
+					ImagePullSecrets:  ts.Spec.ImagePullSecrets,
 					Containers: []corev1.Container{
 						{
 							Name:            "typesense",
