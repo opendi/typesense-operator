@@ -19,9 +19,10 @@ package main
 import (
 	"crypto/tls"
 	"flag"
-	"go.uber.org/zap/zapcore"
-	"k8s.io/client-go/discovery"
 	"os"
+
+	"go.uber.org/zap/zapcore"
+	"k8s.io/client-go/kubernetes"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
@@ -159,16 +160,25 @@ func main() {
 		os.Exit(1)
 	}
 
-	discoveryClient, err := discovery.NewDiscoveryClientForConfig(kubeConfig)
+	clientSet, err := kubernetes.NewForConfig(kubeConfig)
 	if err != nil {
-		setupLog.Error(err, "unable to create discovery client")
+		setupLog.Error(err, "unable to create kubernetes clientset")
+		os.Exit(1)
 	}
+
+	//discoveryClient, err := discovery.NewDiscoveryClientForConfig(kubeConfig)
+	//if err != nil {
+	//	setupLog.Error(err, "unable to create discovery client")
+	//}
 
 	if err = (&controller.TypesenseClusterReconciler{
 		Client:          mgr.GetClient(),
 		Scheme:          mgr.GetScheme(),
 		Recorder:        mgr.GetEventRecorderFor("typesensecluster-controller"),
-		DiscoveryClient: discoveryClient,
+		ClientSet:       clientSet,
+		DiscoveryClient: clientSet.DiscoveryClient,
+		Configuration:   mgr.GetConfig(),
+		InCluster:       isInCluster(),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "TypesenseCluster")
 		os.Exit(1)
@@ -189,4 +199,18 @@ func main() {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
 	}
+}
+
+func isInCluster() bool {
+	const (
+		tokenFile = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+	)
+
+	_, err := os.Stat(tokenFile)
+	inCluster := err == nil
+	if !inCluster {
+		setupLog.V(1).Info("manager is running in out-of-cluster mode")
+	}
+
+	return inCluster
 }
