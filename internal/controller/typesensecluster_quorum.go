@@ -7,7 +7,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"time"
 
 	tsv1alpha1 "github.com/akyriako/typesense-operator/api/v1alpha1"
 	v1 "k8s.io/api/core/v1"
@@ -38,9 +37,18 @@ func (r *TypesenseClusterReconciler) ReconcileQuorum(ctx context.Context, ts *ts
 
 	r.logger.Info("calculated quorum", "minRequiredNodes", quorum.MinRequiredNodes, "availableNodes", quorum.AvailableNodes)
 
+	if quorum.AvailableNodes != int(ts.Spec.Replicas) {
+		r.logger.Info("resizing quorum pending", "size", ts.Spec.Replicas)
+	}
+
+	if quorum.AvailableNodes < quorum.MinRequiredNodes {
+		return ConditionReasonStatefulSetNotReady, 0, nil
+	}
+
 	nodesStatus := make(map[string]NodeStatus)
-	httpClient := &http.Client{
-		Timeout: time.Duration(ts.Spec.HealthProbeTimeoutInMilliseconds) * time.Millisecond,
+	httpClient, err := r.getHttpClient(ts)
+	if err != nil {
+		return ConditionReasonQuorumNotReady, 0, err
 	}
 
 	queuedWrites := 0
