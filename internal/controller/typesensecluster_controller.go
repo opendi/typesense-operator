@@ -24,10 +24,9 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/pkg/errors"
-	"golang.org/x/text/cases"
-	"golang.org/x/text/language"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -94,6 +93,7 @@ const (
 // +kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch;delete;update;patch
 // +kubebuilder:rbac:groups="",resources=pods/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups="",resources=pods/log,verbs=get
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core,resources=events,verbs=create;patch
@@ -102,6 +102,8 @@ const (
 // +kubebuilder:rbac:groups=monitoring.coreos.com,resources=servicemonitors,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=monitoring.coreos.com,resources=podmonitors,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=discovery.k8s.io,resources=endpointslices,verbs=get;list;watch
+// +kubebuilder:rbac:groups=gateway.networking.k8s.io,resources=httproutes,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=gateway.networking.k8s.io,resources=referencegrants,verbs=get;list;watch;create;update;patch;delete
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -114,12 +116,13 @@ const (
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.18.4/pkg/reconcile
 func (r *TypesenseClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	r.logger = log.Log.WithValues("namespace", req.Namespace, "cluster", req.Name)
-	r.logger.Info("reconciling cluster")
 
 	var ts tsv1alpha1.TypesenseCluster
 	if err := r.Get(ctx, req.NamespacedName, &ts); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
+
+	r.logger.Info("reconciling cluster")
 
 	err := r.initConditions(ctx, &ts)
 	if err != nil {
@@ -157,9 +160,19 @@ func (r *TypesenseClusterReconciler) Reconcile(ctx context.Context, req ctrl.Req
 	}
 
 	// Update strategy: Update the existing objects, if changes are identified in api and peering ports
-	err = r.ReconcileIngress(ctx, ts)
+	err = r.ReconcileIngress(ctx, &ts)
 	if err != nil {
 		cerr := r.setConditionNotReady(ctx, &ts, ConditionReasonIngressNotReady, err)
+		if cerr != nil {
+			err = errors.Wrap(err, cerr.Error())
+		}
+		return ctrl.Result{}, err
+	}
+
+	// Update strategy: Update the existing objects, if changes are identified
+	err = r.ReconcileHttpRoute(ctx, &ts)
+	if err != nil {
+		cerr := r.setConditionNotReady(ctx, &ts, ConditionReasonHttpRouteNotReady, err)
 		if cerr != nil {
 			err = errors.Wrap(err, cerr.Error())
 		}
@@ -187,7 +200,7 @@ func (r *TypesenseClusterReconciler) Reconcile(ctx context.Context, req ctrl.Req
 	}
 
 	// Update strategy: Update the whole specs when changes are identified
-	sts, err := r.ReconcileStatefulSet(ctx, &ts)
+	sts, _, err := r.ReconcileStatefulSet(ctx, &ts)
 	if err != nil {
 		cerr := r.setConditionNotReady(ctx, &ts, ConditionReasonStatefulSetNotReady, err)
 		if cerr != nil {
@@ -198,9 +211,6 @@ func (r *TypesenseClusterReconciler) Reconcile(ctx context.Context, req ctrl.Req
 
 	terminationGracePeriodSeconds := *sts.Spec.Template.Spec.TerminationGracePeriodSeconds
 	requeueAfter := reconcileRequeuePeriod + (time.Duration(terminationGracePeriodSeconds) * time.Second)
-	toTitle := func(s string) string {
-		return cases.Title(language.Und, cases.NoLower).String(s)
-	}
 
 	cond := ConditionReasonQuorumStateUnknown
 	action := Bootstrapping
@@ -209,6 +219,9 @@ func (r *TypesenseClusterReconciler) Reconcile(ctx context.Context, req ctrl.Req
 	}
 
 	if configMapUpdated == nil {
+		if action == Bootstrapping {
+			requeueAfter = 15 * time.Second
+		}
 		r.logger.Info(fmt.Sprintf("%s cluster completed", string(action)), "condition", cond, "requeueAfter", requeueAfter)
 		return ctrl.Result{RequeueAfter: requeueAfter}, nil
 	}
@@ -216,7 +229,13 @@ func (r *TypesenseClusterReconciler) Reconcile(ctx context.Context, req ctrl.Req
 	if *configMapUpdated {
 		err = r.forcePodsConfigMapUpdate(ctx, &ts)
 		if err != nil {
-			r.logger.Error(err, "failed to force pods configmap update", "configmap", fmt.Sprintf(ClusterNodesConfigMap, ts.Name))
+			if agg, ok := err.(utilerrors.Aggregate); ok {
+				for _, e := range agg.Errors() {
+					r.logger.Error(e, "failed to force configmap update", "configmap", fmt.Sprintf(ClusterNodesConfigMap, ts.Name))
+				}
+			} else {
+				r.logger.Error(err, "failed to force pods configmap update", "configmap", fmt.Sprintf(ClusterNodesConfigMap, ts.Name))
+			}
 		}
 
 		cond = ConditionReasonQuorumNotReadyWaitATerm
@@ -288,5 +307,6 @@ func (r *TypesenseClusterReconciler) Reconcile(ctx context.Context, req ctrl.Req
 func (r *TypesenseClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&tsv1alpha1.TypesenseCluster{}, eventFilters).
+		Named("typesense-kubernetes-operator").
 		Complete(r)
 }

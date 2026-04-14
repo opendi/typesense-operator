@@ -17,7 +17,7 @@
 **Simplify the deployment, scaling, and management of Typesense clusters in Kubernetes.**
 
 - Deploy highly-available **Typesense** clusters with a **single declarative YAML manifest**
-- Automates **Typesense** [lifecycle management](https://akyriako.github.io/typesense-operator-docs/docs/getting-started#key-features) (config maps, secrets, volumes, statefulsets, services, ingress, metrics, scrapers)
+- Automates **Typesense** [lifecycle management](https://akyriako.github.io/typesense-operator-docs/docs/getting-started#key-features) (config maps, secrets, volumes, statefulsets, services, ingress or http routes, metrics, scrapers)
 - Automates **Raft quorum [configuration, discovery and recovery](https://akyriako.github.io/typesense-operator-docs/docs/how-it-works/recovering-a-cluster-that-has-lost-quorum)** without additional sidecars or manual interventions
 - Built with Go & Operator SDK — lightweight, Kubernetes-native, and flexible
 - Community-driven, with plethora of examples for Kind, CCE, AKS, EKS, GCP, and more
@@ -29,7 +29,7 @@
 helm repo add tyko https://akyriako.github.io/typesense-operator/
 helm repo update
 
-helm upgrade --install typesense-operator tyko/typesense-operator -n typesense-system --create-namespace
+helm upgrade --install typesense-operator tyko/typesense-operator -n typesense-system --create-namespace --reset-values
 ```
 
 <details>
@@ -42,12 +42,65 @@ metadata:
   labels:
     app.kubernetes.io/name: typesense-operator
     app.kubernetes.io/managed-by: kustomize
-  name: ts-cce
+  name: ts-otc-1
 spec:
-  image: typesense/typesense:29.0
+  image: typesense/typesense:30.0
   replicas: 3
   storage:
     storageClassName: csi-disk
+```
+</details>
+
+<details>
+<summary>Quick example for Open Telekom Cloud CCE with OBS S3 support</summary>
+
+```yaml
+apiVersion: ts.opentelekomcloud.com/v1alpha1
+kind: TypesenseCluster
+metadata:
+  labels:
+    app.kubernetes.io/name: typesense-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: ts-otc-2
+spec:
+  image: typesense/typesense:30.0
+  replicas: 3
+  storage:
+    storageClassName: csi-obs
+    accessMode: ReadWriteMany
+    annotations:
+      csi.storage.k8s.io/fstype: obsfs
+      volume.beta.kubernetes.io/storage-provisioner: everest-csi-provisioner
+      csi.storage.k8s.io/node-publish-secret-name: otc-aksk
+      csi.storage.k8s.io/node-publish-secret-namespace: default
+      everest.io/csi.volume-name-prefix: c-otc-2
+```
+</details>
+
+<details>
+<summary>Quick example for Open Telekom Cloud CCE with SFS Turbo S3 support</summary>
+
+```yaml
+apiVersion: ts.opentelekomcloud.com/v1alpha1
+kind: TypesenseCluster
+metadata:
+  labels:
+    app.kubernetes.io/name: typesense-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: ts-otc-3
+spec:
+  image: typesense/typesense:30.0
+  replicas: 3
+  storage:
+    storageClassName: csi-obs
+    accessMode: ReadWriteMany
+    annotations:
+      everest.io/obs-volume-type: STANDARD
+      csi.storage.k8s.io/fstype: s3fs
+      volume.beta.kubernetes.io/storage-provisioner: everest-csi-provisioner
+      csi.storage.k8s.io/node-publish-secret-name: otc-aksk
+      csi.storage.k8s.io/node-publish-secret-namespace: default
+      everest.io/csi.volume-name-prefix: c-otc-3
 ```
 </details>
 
@@ -63,7 +116,7 @@ metadata:
     app.kubernetes.io/managed-by: kustomize
   name: ts-bm-k3s
 spec:
-  image: typesense/typesense:29.0
+  image: typesense/typesense:30.0
   replicas: 3
   storage:
     storageClassName: nfs
@@ -91,7 +144,7 @@ metadata:
     app.kubernetes.io/managed-by: kustomize
   name: ts-kind
 spec:
-  image: typesense/typesense:29.0
+  image: typesense/typesense:30.0
   replicas: 3
   storage:
     size: 150Mi
@@ -111,7 +164,7 @@ metadata:
     app.kubernetes.io/managed-by: kustomize
   name: ts-aws
 spec:
-  image: typesense/typesense:29.0
+  image: typesense/typesense:30.0
   replicas: 3
   storage:
     size: 100Mi
@@ -131,7 +184,7 @@ metadata:
     app.kubernetes.io/managed-by: kustomize
   name: ts-azure
 spec:
-  image: typesense/typesense:29.0
+  image: typesense/typesense:30.0
   replicas: 3
   storage:
     storageClassName: managed-csi
@@ -150,7 +203,7 @@ metadata:
     app.kubernetes.io/managed-by: kustomize
   name: ts-gcp
 spec:
-  image: typesense/typesense:29.0
+  image: typesense/typesense:30.0
   replicas: 3
   storage:
     storageClassName: standard-rwo
@@ -175,8 +228,8 @@ Join the conversation:
 ## 📦 Project Status
 
 TyKO is an **independently maintained** project (not affiliated with Typesense, Inc.).
-- Latest version: **0.3.5**
-- Tested on: Kubernetes 1.33 (earliest 1.26), Typesense 29.0 (earliest 26.0)
+- Latest version: **0.4.1-rc.1**
+- Tested on: Kubernetes 1.35 (earliest 1.26), Typesense 30.0 (earliest 26.0)
 - Contributions welcome! See [FAQ](https://akyriako.github.io/typesense-operator-docs/docs/faq) and [Development](https://akyriako.github.io/typesense-operator-docs/docs/development)
 
 ## ⭐ Help us Grow

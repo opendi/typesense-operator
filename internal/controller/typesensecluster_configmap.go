@@ -13,6 +13,7 @@ import (
 	discoveryv1 "k8s.io/api/discovery/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
+	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -182,28 +183,36 @@ func (r *TypesenseClusterReconciler) forcePodsConfigMapUpdate(ctx context.Contex
 		return err
 	}
 
+	var errs []error
 	for i := range podList.Items {
 		pod := &podList.Items[i]
+		original := pod.DeepCopy()
+
+		if !pod.DeletionTimestamp.IsZero() {
+			continue
+		}
 
 		if pod.Annotations == nil {
 			pod.Annotations = map[string]string{}
 		}
 		pod.Annotations[forceConfigMapUpdateAnnotationKey] = time.Now().Format(time.RFC3339)
 
-		if err := r.Patch(ctx, pod, client.MergeFrom(pod.DeepCopy())); err != nil {
-			r.logger.Error(err, "patching to pod annotations failed", "pod", pod.Name)
-			return err
+		if err := r.Patch(ctx, pod, client.MergeFrom(original)); err != nil {
+			r.logger.Error(err, "patching pod annotations failed", "pod", pod.Name)
+			errs = append(errs, fmt.Errorf("pod %s: %w", pod.Name, err))
+			continue
 		}
+
+		r.logger.V(debugLevel).Info("patching pod annotations", "pod", pod.Name, "annotation", forceConfigMapUpdateAnnotationKey)
 	}
 
-	return nil
+	return utilerrors.NewAggregate(errs)
 }
 
 func (r *TypesenseClusterReconciler) getNodes(ctx context.Context, ts *tsv1alpha1.TypesenseCluster, replicas int32, bootstrapping bool) ([]string, error) {
 	nodes := make([]string, 0)
-
-	if bootstrapping {
-		for i := 0; i < int(replicas); i++ {
+	getFallbackNodes := func(nodes []string) ([]string, error) {
+		for i := 0; i < int(ts.Spec.Replicas); i++ {
 			nodeName := fmt.Sprintf("%s-sts-%d.%s-sts-svc", ts.Name, i, ts.Name)
 			if len(nodeName) > nodeNameLenLimit {
 				return nil, fmt.Errorf("raft error: node name should not exceed %d characters: %s", nodeNameLenLimit, nodeName)
@@ -215,6 +224,15 @@ func (r *TypesenseClusterReconciler) getNodes(ctx context.Context, ts *tsv1alpha
 		return nodes, nil
 	}
 
+	if bootstrapping {
+		fallbackNodes := make([]string, 0)
+		return getFallbackNodes(fallbackNodes)
+	}
+
+	unscheduledPods := int32(0)
+	targetReplicas := replicas
+
+	stsExists := true
 	stsName := fmt.Sprintf(ClusterStatefulSet, ts.Name)
 	stsObjectKey := client.ObjectKey{
 		Name:      stsName,
@@ -222,22 +240,59 @@ func (r *TypesenseClusterReconciler) getNodes(ctx context.Context, ts *tsv1alpha
 	}
 	sts, err := r.GetFreshStatefulSet(ctx, stsObjectKey)
 	if err != nil {
-		return nil, err
+		if !apierrors.IsNotFound(err) {
+			return nil, err
+		}
+		stsExists = false
+		unscheduledPods = replicas
 	}
 
-	slices, err := r.getEndpointSlicesForStatefulSet(ctx, sts)
+	if stsExists {
+		labelSelector := labels.SelectorFromSet(sts.Spec.Selector.MatchLabels)
+
+		var pods v1.PodList
+		if err := r.List(ctx, &pods, &client.ListOptions{
+			Namespace:     sts.Namespace,
+			LabelSelector: labelSelector,
+		}); err != nil {
+			r.logger.Error(err, "failed to list pods", "statefulset", sts.Name)
+			return getFallbackNodes(nodes)
+		}
+
+		for _, pod := range pods.Items {
+			if pod.Status.Phase != v1.PodPending {
+				continue
+			}
+			for _, cond := range pod.Status.Conditions {
+				if cond.Type == v1.PodScheduled &&
+					cond.Status == v1.ConditionFalse &&
+					cond.Reason == v1.PodReasonUnschedulable {
+					unscheduledPods++
+					break
+				}
+			}
+		}
+
+		targetReplicas = ptr.Deref[int32](sts.Spec.Replicas, 1)
+	}
+
+	if unscheduledPods == targetReplicas {
+		fallbackNodes := make([]string, 0)
+		return getFallbackNodes(fallbackNodes)
+	}
+
+	eps, err := r.getEndpointSlicesForStatefulSet(ctx, sts)
 	if err != nil {
 		return nil, err
 	}
 
-	i := 0
-	for _, s := range slices {
+	for _, s := range eps {
 		for _, e := range s.Endpoints {
-			addr := e.Addresses[0]
-			//r.logger.V(debugLevel).Info("discovered slice endpoint", "slice", s.Name, "endpoint", e.Hostname, "address", addr)
-			nodes = append(nodes, fmt.Sprintf("%s:%d:%d", addr, ts.Spec.PeeringPort, ts.Spec.ApiPort))
-
-			i++
+			if len(e.Addresses) > 0 {
+				addr := e.Addresses[0]
+				//r.logger.V(debugLevel).Info("discovered slice endpoint", "slice", s.Name, "endpoint", e.Hostname, "address", addr)
+				nodes = append(nodes, fmt.Sprintf("%s:%d:%d", addr, ts.Spec.PeeringPort, ts.Spec.ApiPort))
+			}
 		}
 	}
 
@@ -324,4 +379,21 @@ func (r *TypesenseClusterReconciler) getShortName(raftNodeEndpoint string) strin
 	}
 
 	return host
+}
+
+func (r *TypesenseClusterReconciler) hasBootstrapValues(ts *tsv1alpha1.TypesenseCluster, cm *v1.ConfigMap) (bool, error) {
+	rawNodeslist, ok := cm.Data["nodes"]
+	if !ok || rawNodeslist == "" {
+		err := fmt.Errorf("configmap is missing 'nodes' key")
+		return false, err
+	}
+
+	nodeslist := strings.Split(rawNodeslist, ",")
+	for _, node := range nodeslist {
+		if strings.Contains(node, fmt.Sprintf(ClusterStatefulSet, ts.Name)) {
+			return true, nil
+		}
+	}
+
+	return false, nil
 }

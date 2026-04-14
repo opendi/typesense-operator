@@ -84,6 +84,11 @@ type TypesenseClusterSpec struct {
 	// +kubebuilder:validation:Type=string
 	CorsDomains *string `json:"corsDomains,omitempty"`
 
+	// +optional
+	// +kubebuilder:default=true
+	// +kubebuilder:validation:Type=boolean
+	ForceResetPeersConfigOnUpdate bool `json:"forceResetPeersConfigOnUpdate,omitempty"`
+
 	Resources *corev1.ResourceRequirements `json:"resources,omitempty"`
 
 	// +kubebuilder:validation:Optional
@@ -116,6 +121,8 @@ type TypesenseClusterSpec struct {
 
 	Ingress *IngressSpec `json:"ingress,omitempty"`
 
+	HttpRoutes []HttpRouteSpec `json:"httpRoutes,omitempty"`
+
 	Scrapers []DocSearchScraperSpec `json:"scrapers,omitempty"`
 
 	Metrics *MetricsExporterSpec `json:"metrics,omitempty"`
@@ -127,6 +134,12 @@ type TypesenseClusterSpec struct {
 
 	// +kubebuilder:validation:Optional
 	PriorityClassName *string `json:"priorityClassName,omitempty"`
+
+	SecurityContext *SecurityContextSpec `json:"securityContext,omitempty"`
+
+	// +kubebuilder:validation:Optional
+	// +kubebuilder:validation:Items:Type=string
+	IgnoreAnnotationsFromExternalMutations []string `json:"ignoreAnnotationsFromExternalMutations,omitempty"`
 
 	// +optional
 	// +kubebuilder:default=false

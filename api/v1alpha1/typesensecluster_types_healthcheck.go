@@ -7,11 +7,21 @@ import (
 
 type HealthCheckSpec struct {
 	// +kubebuilder:validation:Optional
-	// +kubebuilder:default:="akyriako78/typesense-healthcheck:0.1.8"
+	// +kubebuilder:default:="quay.io/akyriako/typesense-healthcheck:0.1.8"
 	Image string `json:"image,omitempty"`
 
 	// +kubebuilder:validation:Optional
 	Resources *corev1.ResourceRequirements `json:"resources,omitempty"`
+
+	// +optional
+	// +kubebuilder:default=0
+	// +kubebuilder:validation:Minimum=-4
+	// +kubebuilder:validation:Maximum=8
+	// +kubebuilder:validation:ExclusiveMinimum=false
+	// +kubebuilder:validation:ExclusiveMaximum=false
+	// +kubebuilder:validation:Type=integer
+	// +kubebuilder:validation:Enum=-4;0;4;8
+	LogLevel int `json:"logLevel,omitempty"`
 }
 
 func (s *TypesenseClusterSpec) GetHealthCheckSidecarSpecs() HealthCheckSpec {
@@ -20,7 +30,7 @@ func (s *TypesenseClusterSpec) GetHealthCheckSidecarSpecs() HealthCheckSpec {
 	}
 
 	return HealthCheckSpec{
-		Image: "akyriako78/typesense-healthcheck:0.1.8",
+		Image: "quay.io/akyriako/typesense-healthcheck:0.1.8",
 	}
 }
 

@@ -9,7 +9,7 @@ type MetricsExporterSpec struct {
 	Release string `json:"release"`
 
 	// +kubebuilder:validation:Optional
-	// +kubebuilder:default:="akyriako78/typesense-prometheus-exporter:0.1.9"
+	// +kubebuilder:default:="quay.io/akyriako/typesense-prometheus-exporter:0.1.9"
 	Image string `json:"image,omitempty"`
 
 	// +optional
@@ -23,6 +23,16 @@ type MetricsExporterSpec struct {
 
 	// +kubebuilder:validation:Optional
 	Resources *corev1.ResourceRequirements `json:"resources,omitempty"`
+
+	// +optional
+	// +kubebuilder:default=0
+	// +kubebuilder:validation:Minimum=-4
+	// +kubebuilder:validation:Maximum=8
+	// +kubebuilder:validation:ExclusiveMinimum=false
+	// +kubebuilder:validation:ExclusiveMaximum=false
+	// +kubebuilder:validation:Type=integer
+	// +kubebuilder:validation:Enum=-4;0;4;8
+	LogLevel int `json:"logLevel,omitempty"`
 }
 
 func (s *TypesenseClusterSpec) GetMetricsExporterSpecs() MetricsExporterSpec {
@@ -32,7 +42,7 @@ func (s *TypesenseClusterSpec) GetMetricsExporterSpecs() MetricsExporterSpec {
 
 	return MetricsExporterSpec{
 		Release:           "promstack",
-		Image:             "akyriako78/typesense-prometheus-exporter:0.1.9",
+		Image:             "quay.io/akyriako/typesense-prometheus-exporter:0.1.9",
 		IntervalInSeconds: 15,
 	}
 }

@@ -2,18 +2,13 @@ package controller
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/json"
 	"fmt"
 	"strconv"
-	"strings"
 	"time"
 
 	tsv1alpha1 "github.com/akyriako/typesense-operator/api/v1alpha1"
-	"github.com/mitchellh/hashstructure/v2"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -30,9 +25,10 @@ const (
 	readLagAnnotationKey               = "ts.opentelekomcloud.com/read-lag-threshold"
 	writeLagAnnotationKey              = "ts.opentelekomcloud.com/write-lag-threshold"
 	restartPodsAnnotationKey           = "kubectl.kubernetes.io/restartedAt"
+	rancherDomainAnnotationKey         = "cattle.io"
 )
 
-func (r *TypesenseClusterReconciler) ReconcileStatefulSet(ctx context.Context, ts *tsv1alpha1.TypesenseCluster) (*appsv1.StatefulSet, error) {
+func (r *TypesenseClusterReconciler) ReconcileStatefulSet(ctx context.Context, ts *tsv1alpha1.TypesenseCluster) (*appsv1.StatefulSet, bool, error) {
 	r.logger.V(debugLevel).Info("reconciling statefulset")
 
 	stsName := fmt.Sprintf(ClusterStatefulSet, ts.Name)
@@ -48,7 +44,7 @@ func (r *TypesenseClusterReconciler) ReconcileStatefulSet(ctx context.Context, t
 			stsExists = false
 		} else {
 			r.logger.Error(err, fmt.Sprintf("unable to fetch statefulset: %s", stsName))
-			return nil, err
+			return nil, false, err
 		}
 	}
 
@@ -62,11 +58,11 @@ func (r *TypesenseClusterReconciler) ReconcileStatefulSet(ctx context.Context, t
 		)
 		if err != nil {
 			r.logger.Error(err, "creating statefulset failed", "sts", stsObjectKey.Name)
-			return nil, err
+			return nil, false, err
 		}
 
 		r.logLagThresholds(sts)
-		return sts, nil
+		return sts, false, nil
 	} else {
 		skipConditions := []string{
 			string(ConditionReasonQuorumDowngraded),
@@ -79,56 +75,86 @@ func (r *TypesenseClusterReconciler) ReconcileStatefulSet(ctx context.Context, t
 			string(ConditionReasonQuorumNotReadyWaitATerm),
 		}
 
-		if _, contains := contains(skipConditions, r.getConditionReady(ts).Reason); !contains {
-			desiredSts, err := r.buildStatefulSet(ctx, stsObjectKey, ts)
-			if err != nil {
-				r.logger.Error(err, "building statefulset failed", "sts", stsObjectKey.Name)
-			}
+		condition := r.getConditionReady(ts)
 
-			stsAnnotations := sts.ObjectMeta.Annotations
-			podAnnotations := sts.Spec.Template.Annotations
-			delete(podAnnotations, restartPodsAnnotationKey)
-
-			if r.shouldUpdateStatefulSet(sts, desiredSts, ts) ||
-				!apiequality.Semantic.DeepEqual(podAnnotations, desiredSts.Spec.Template.Annotations) ||
-				!apiequality.Semantic.DeepEqual(stsAnnotations, desiredSts.ObjectMeta.Annotations) {
-
-				r.logger.V(debugLevel).Info("updating statefulset", "sts", sts.Name)
-
-				oldImage := strings.Replace(sts.Spec.Template.Spec.Containers[0].Image, "typesense/typesense:", "", -1)
-				newImage := strings.Replace(desiredSts.Spec.Template.Spec.Containers[0].Image, "typesense/typesense:", "", -1)
-				if oldImage != newImage {
-					r.logger.V(debugLevel).Info("scheduling typesense update", "current", oldImage, "target", newImage)
-					r.Recorder.Eventf(ts, "Normal", "TypesenseVersionUpdate", "Scheduled update from %s to %s", oldImage, newImage)
-				}
-
-				updatedSts, err := r.updateStatefulSet(ctx, sts, desiredSts)
+		if condition != nil {
+			emergencyUpdateRequired := r.shouldEmergencyUpdateStatefulSet(sts, ts)
+			if _, contains := contains(skipConditions, condition.Reason); !contains || emergencyUpdateRequired {
+				desiredSts, err := r.buildStatefulSet(ctx, stsObjectKey, ts)
 				if err != nil {
-					r.logger.Error(err, "updating statefulset failed", "sts", stsObjectKey.Name)
-					return nil, err
+					r.logger.Error(err, "building statefulset failed", "sts", stsObjectKey.Name)
 				}
 
-				configMapName := fmt.Sprintf(ClusterNodesConfigMap, ts.Name)
-				configMapObjectKey := client.ObjectKey{Namespace: ts.Namespace, Name: configMapName}
+				update, scaleOnly, triggers := r.shouldUpdateStatefulSet(sts, desiredSts, ts)
+				if update && !scaleOnly {
+					oldImage := getImageTag(sts.Spec.Template.Spec.Containers[0].Image)
+					newImage := getImageTag(desiredSts.Spec.Template.Spec.Containers[0].Image)
+					if oldImage != newImage {
+						triggers = append(triggers, SpecTypesenseVersionChanged)
+						r.Recorder.Eventf(ts, "Normal", "TypesenseVersionUpdate", "Scheduled update from %s to %s", oldImage, newImage)
+					}
 
-				var cm = &corev1.ConfigMap{}
-				if err := r.Get(ctx, configMapObjectKey, cm); err != nil {
-					r.logger.V(debugLevel).Error(err, fmt.Sprintf("unable to fetch config map: %s", configMapName))
+					r.logger.V(debugLevel).Info("updating statefulset", "sts", sts.Name, "triggers", triggers)
+
+					updatedSts, err := r.updateStatefulSet(ctx, sts, desiredSts)
+					if err != nil {
+						r.logger.Error(err, "updating statefulset failed", "sts", stsObjectKey.Name)
+						return nil, false, err
+					}
+
+					configMapName := fmt.Sprintf(ClusterNodesConfigMap, ts.Name)
+					configMapObjectKey := client.ObjectKey{Namespace: ts.Namespace, Name: configMapName}
+
+					var cm = &corev1.ConfigMap{}
+					if err := r.Get(ctx, configMapObjectKey, cm); err != nil {
+						r.logger.V(debugLevel).Error(err, fmt.Sprintf("unable to fetch config map: %s", configMapName))
+					}
+
+					_, _, updated, err := r.updateConfigMap(ctx, ts, cm, updatedSts.Spec.Replicas, true)
+					if err != nil {
+						r.logger.V(debugLevel).Error(err, fmt.Sprintf("unable to update config map: %s", configMapName))
+					}
+
+					if updated && ts.Spec.ForceResetPeersConfigOnUpdate {
+						_ = r.forcePodsConfigMapUpdate(ctx, ts)
+					}
+
+					r.logLagThresholds(updatedSts)
+					return updatedSts, true, nil
+				} else if !update && scaleOnly {
+					r.logger.V(debugLevel).Info("scaling statefulset", "sts", sts.Name, "triggers", triggers)
+
+					size := ts.Spec.Replicas
+					err = r.ScaleStatefulSet(ctx, stsObjectKey, size)
+					if err != nil {
+						return desiredSts, true, err
+					}
+
+					configMapName := fmt.Sprintf(ClusterNodesConfigMap, ts.Name)
+					configMapObjectKey := client.ObjectKey{Namespace: ts.Namespace, Name: configMapName}
+
+					var cm = &corev1.ConfigMap{}
+					if err := r.Get(ctx, configMapObjectKey, cm); err != nil {
+						r.logger.V(debugLevel).Error(err, fmt.Sprintf("unable to fetch config map: %s", configMapName))
+					}
+					_, _, updated, err := r.updateConfigMap(ctx, ts, cm, &size, true)
+					if err != nil {
+						return desiredSts, true, err
+					}
+
+					if updated && ts.Spec.ForceResetPeersConfigOnUpdate {
+						_ = r.forcePodsConfigMapUpdate(ctx, ts)
+					}
+
+					r.logLagThresholds(desiredSts)
+					return desiredSts, true, nil
 				}
-
-				_, _, _, err = r.updateConfigMap(ctx, ts, cm, updatedSts.Spec.Replicas, true)
-				if err != nil {
-					r.logger.V(debugLevel).Error(err, fmt.Sprintf("unable to update config map: %s", configMapName))
-				}
-
-				r.logLagThresholds(updatedSts)
-				return updatedSts, nil
 			}
 		}
 	}
 
 	r.logLagThresholds(sts)
-	return sts, nil
+	return sts, false, nil
 }
 
 func (r *TypesenseClusterReconciler) logLagThresholds(sts *appsv1.StatefulSet) {
@@ -225,11 +251,7 @@ func (r *TypesenseClusterReconciler) buildStatefulSet(ctx context.Context, key c
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: getObjectMeta(ts, &key.Name, podAnnotations),
 				Spec: corev1.PodSpec{
-					SecurityContext: &corev1.PodSecurityContext{
-						RunAsUser:    ptr.To[int64](10000),
-						FSGroup:      ptr.To[int64](2000),
-						RunAsGroup:   ptr.To[int64](3000),
-						RunAsNonRoot: ptr.To[bool](true)},
+					SecurityContext:               ts.Spec.GetPodSecurityContext(),
 					TerminationGracePeriodSeconds: ptr.To[int64](ts.Spec.GetTerminationGracePeriodSeconds()),
 					ReadinessGates: []corev1.PodReadinessGate{
 						{
@@ -243,6 +265,7 @@ func (r *TypesenseClusterReconciler) buildStatefulSet(ctx context.Context, key c
 							Name:            "typesense",
 							Image:           ts.Spec.Image,
 							ImagePullPolicy: corev1.PullIfNotPresent,
+							SecurityContext: ts.Spec.GetTypesenseSecurityContext(),
 							Ports: []corev1.ContainerPort{
 								{
 									Name:          "http",
@@ -314,6 +337,7 @@ func (r *TypesenseClusterReconciler) buildStatefulSet(ctx context.Context, key c
 							Name:            "metrics-exporter",
 							Image:           ts.Spec.GetMetricsExporterSpecs().Image,
 							ImagePullPolicy: corev1.PullIfNotPresent,
+							SecurityContext: ts.Spec.GetMetricsSecurityContext(),
 							Ports: []corev1.ContainerPort{
 								{
 									Name:          "metrics",
@@ -334,7 +358,7 @@ func (r *TypesenseClusterReconciler) buildStatefulSet(ctx context.Context, key c
 								},
 								{
 									Name:  "LOG_LEVEL",
-									Value: strconv.Itoa(0),
+									Value: strconv.Itoa(ts.Spec.GetMetricsExporterSpecs().LogLevel),
 								},
 								{
 									Name:  "TYPESENSE_PROTOCOL",
@@ -363,6 +387,7 @@ func (r *TypesenseClusterReconciler) buildStatefulSet(ctx context.Context, key c
 							Name:            "healthcheck",
 							Image:           ts.Spec.GetHealthCheckSidecarSpecs().Image,
 							ImagePullPolicy: corev1.PullIfNotPresent,
+							SecurityContext: ts.Spec.GetHealthcheckSecurityContext(),
 							Ports: []corev1.ContainerPort{
 								{
 									Name:          "healthcheck",
@@ -383,7 +408,7 @@ func (r *TypesenseClusterReconciler) buildStatefulSet(ctx context.Context, key c
 								},
 								{
 									Name:  "LOG_LEVEL",
-									Value: strconv.Itoa(0),
+									Value: strconv.Itoa(ts.Spec.GetHealthCheckSidecarSpecs().LogLevel),
 								},
 								{
 									Name:  "TYPESENSE_PROTOCOL",
@@ -469,69 +494,19 @@ func (r *TypesenseClusterReconciler) buildStatefulSet(ctx context.Context, key c
 		},
 	}
 
-	podTemplateHash, err := hashstructure.Hash(sts.Spec.Template.Spec, hashstructure.FormatV2, nil)
+	base16Hash, err := r.buildStatefulSetHash(ctx, sts, ts)
 	if err != nil {
 		return nil, err
 	}
 
-	b, err := json.Marshal(sts.Spec.Template.Spec.Containers[0].Resources)
-	if err != nil {
-		return nil, err
-	}
-	resourcesHash, err := hashstructure.Hash(
-		string(b),
-		hashstructure.FormatV2,
-		nil,
-	)
-
-	specsHash := fmt.Sprintf("%d%d", podTemplateHash, resourcesHash)
-
-	if additionalConfiguration := ts.Spec.GetAdditionalServerConfiguration(); additionalConfiguration != nil {
-		for _, ac := range additionalConfiguration {
-			if ac.ConfigMapRef != nil {
-				configMapObjectKey := client.ObjectKey{Namespace: ts.Namespace, Name: ac.ConfigMapRef.Name}
-				var cm = &corev1.ConfigMap{}
-				if err = r.Get(ctx, configMapObjectKey, cm); err != nil {
-					return nil, err
-				}
-
-				data := fmt.Sprintf("%v", cm.Data)
-				if strings.TrimSpace(data) != "" {
-					dataHash, err := hashstructure.Hash(data, hashstructure.FormatV2, nil)
-					if err != nil {
-						return nil, err
-					}
-
-					specsHash = fmt.Sprintf("%s%d", specsHash, dataHash)
-				}
-			}
-		}
-	}
-
-	base16Hash := fmt.Sprintf("%x", sha256.Sum256([]byte(specsHash)))
 	r.logger.V(debugLevel).Info("calculated hash", "hash", base16Hash)
 
 	if sts.Spec.Template.Annotations == nil {
 		sts.Spec.Template.Annotations = map[string]string{}
 	}
-	sts.Spec.Template.Annotations[hashAnnotationKey] = base16Hash
+	sts.Spec.Template.Annotations[hashAnnotationKey] = *base16Hash
 
 	return sts, nil
-}
-
-func (r *TypesenseClusterReconciler) shouldUpdateStatefulSet(sts *appsv1.StatefulSet, desired *appsv1.StatefulSet, ts *tsv1alpha1.TypesenseCluster) bool {
-	//return false
-
-	if *sts.Spec.Replicas != ts.Spec.Replicas &&
-		(r.getConditionReady(ts).Reason != string(ConditionReasonQuorumDowngraded) || r.getConditionReady(ts).Reason != string(ConditionReasonQuorumQueuedWrites)) {
-		return true
-	}
-
-	if sts.Spec.Template.Annotations[hashAnnotationKey] != desired.Spec.Template.Annotations[hashAnnotationKey] {
-		return true
-	}
-
-	return false
 }
 
 func (r *TypesenseClusterReconciler) ScaleStatefulSet(ctx context.Context, stsObjectKey client.ObjectKey, desiredReplicas int32) error {
@@ -555,7 +530,7 @@ func (r *TypesenseClusterReconciler) ScaleStatefulSet(ctx context.Context, stsOb
 	return nil
 }
 
-func (r *TypesenseClusterReconciler) PurgeStatefulSetPods(ctx context.Context, sts *appsv1.StatefulSet) error {
+func (r *TypesenseClusterReconciler) PurgeStatefulSetPods(ctx context.Context, sts *appsv1.StatefulSet, ts *tsv1alpha1.TypesenseCluster) error {
 	labelSelector := labels.SelectorFromSet(sts.Spec.Selector.MatchLabels)
 
 	var pods corev1.PodList
@@ -575,13 +550,109 @@ func (r *TypesenseClusterReconciler) PurgeStatefulSetPods(ctx context.Context, s
 		}
 	}
 
+	r.Recorder.Eventf(ts, "Warning", string(ConditionReasonQuorumPurged), toTitle("quorum has been purged"))
+
+	return nil
+}
+
+func (r *TypesenseClusterReconciler) GetUnscheduledPods(ctx context.Context, sts *appsv1.StatefulSet) ([]*corev1.Pod, error) {
+	labelSelector := labels.SelectorFromSet(sts.Spec.Selector.MatchLabels)
+
+	var pods corev1.PodList
+	if err := r.List(ctx, &pods, &client.ListOptions{
+		Namespace:     sts.Namespace,
+		LabelSelector: labelSelector,
+	}); err != nil {
+		r.logger.Error(err, "retrieving unscheduled pods: failed to list pods", "statefulset", sts.Name)
+		return nil, err
+	}
+
+	unscheduledPods := make([]*corev1.Pod, 0, len(pods.Items))
+	for _, pod := range pods.Items {
+		if pod.Status.Phase == corev1.PodPending {
+			for _, cond := range pod.Status.Conditions {
+				if cond.Type == corev1.PodScheduled && cond.Status == corev1.ConditionFalse && cond.Reason == corev1.PodReasonUnschedulable {
+					unscheduledPods = append(unscheduledPods, &pod)
+				}
+			}
+		}
+	}
+
+	return unscheduledPods, nil
+}
+
+func (r *TypesenseClusterReconciler) RestartUnscheduledPods(ctx context.Context, pods []*corev1.Pod, ts *tsv1alpha1.TypesenseCluster) error {
+	removedAny := false
+	for _, pod := range pods {
+		if pod.Status.Phase == corev1.PodPending {
+			for _, cond := range pod.Status.Conditions {
+				if cond.Type == corev1.PodScheduled && cond.Status == corev1.ConditionFalse && cond.Reason == corev1.PodReasonUnschedulable {
+					r.logger.V(debugLevel).Info("removing unscheduled pod", "pod", pod.Name)
+
+					propagation := metav1.DeletePropagationBackground
+					err := r.Delete(ctx, pod, &client.DeleteOptions{PropagationPolicy: &propagation})
+					if err != nil {
+						r.logger.Error(err, "failed to remove unscheduled pod", "pod", pod.Name)
+					}
+
+					if !removedAny {
+						removedAny = err == nil
+					}
+				}
+			}
+		}
+	}
+
+	if removedAny {
+		r.Recorder.Eventf(ts, "Warning", ConditionReasonStatefulSetNotReady, toTitle("removed unscheduled pods"))
+	}
+
+	return nil
+}
+
+func (r *TypesenseClusterReconciler) RestartAllUnscheduledPods(ctx context.Context, sts *appsv1.StatefulSet, ts *tsv1alpha1.TypesenseCluster) error {
+	labelSelector := labels.SelectorFromSet(sts.Spec.Selector.MatchLabels)
+
+	var pods corev1.PodList
+	if err := r.List(ctx, &pods, &client.ListOptions{
+		Namespace:     sts.Namespace,
+		LabelSelector: labelSelector,
+	}); err != nil {
+		r.logger.Error(err, "deleting unscheduled pods: failed to list pods", "statefulset", sts.Name)
+		return err
+	}
+
+	removedAny := false
+	for _, pod := range pods.Items {
+		if pod.Status.Phase == corev1.PodPending {
+			for _, cond := range pod.Status.Conditions {
+				if cond.Type == corev1.PodScheduled && cond.Status == corev1.ConditionFalse && cond.Reason == corev1.PodReasonUnschedulable {
+					propagation := metav1.DeletePropagationBackground
+					err := r.Delete(ctx, &pod, &client.DeleteOptions{
+						PropagationPolicy: &propagation,
+					})
+
+					if !removedAny {
+						removedAny = err == nil
+					}
+				}
+			}
+		}
+	}
+
+	if removedAny {
+		r.Recorder.Eventf(ts, "Warning", ConditionReasonStatefulSetNotReady, toTitle("removed unscheduled pods"))
+	}
+
 	return nil
 }
 
 func (r *TypesenseClusterReconciler) GetFreshStatefulSet(ctx context.Context, stsObjectKey client.ObjectKey) (*appsv1.StatefulSet, error) {
 	sts := &appsv1.StatefulSet{}
 	if err := r.Get(ctx, stsObjectKey, sts); err != nil {
-		r.logger.Error(err, fmt.Sprintf("unable to fetch statefulset: %s", stsObjectKey.Name))
+		if !apierrors.IsNotFound(err) {
+			r.logger.Error(err, fmt.Sprintf("unable to fetch statefulset: %s", stsObjectKey.Name))
+		}
 		return nil, err
 	}
 

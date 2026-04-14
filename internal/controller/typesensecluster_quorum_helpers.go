@@ -16,12 +16,13 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"k8s.io/client-go/rest"
 )
 
-func (r *TypesenseClusterReconciler) getNodeStatus(ctx context.Context, httpClient *http.Client, node NodeEndpoint, ts *tsv1alpha1.TypesenseCluster, secret *v1.Secret) (NodeStatus, error) {
+func (r *TypesenseClusterReconciler) getNodeStatus(ctx context.Context, httpClient *http.Client, node NodeEndpoint, ts *tsv1alpha1.TypesenseCluster, secret *v1.Secret, logs string) (NodeStatus, error) {
 	u, err := r.buildUrl(node, ts, ts.Spec.ApiPort, "/status")
 	if err != nil {
 		return NodeStatus{State: UnreachableState}, nil
@@ -62,6 +63,11 @@ func (r *TypesenseClusterReconciler) getNodeStatus(ctx context.Context, httpClie
 		nodeStatus.State = ErrorState
 	}
 
+	contains := r.inspectPodLogs(logs, ErrorsRequirePodTermination...)
+	if contains {
+		nodeStatus.State = ErrorState
+	}
+
 	return nodeStatus, nil
 }
 
@@ -86,9 +92,12 @@ func (r *TypesenseClusterReconciler) getClusterStatus(nodesStatus map[string]Nod
 	}
 
 	if leaderNodes == 0 {
-		if availableNodes == 1 {
+		if availableNodes <= 1 {
 			return ClusterStatusNotReady
 		} // here is setting as not ready even if the single node returns state ERROR
+		if availableNodes == notReadyNodes {
+			return ClusterStatusNotReady
+		}
 		return ClusterStatusElectionDeadlock
 	}
 
@@ -102,7 +111,7 @@ func (r *TypesenseClusterReconciler) getClusterStatus(nodesStatus map[string]Nod
 	return ClusterStatusNotReady
 }
 
-func (r *TypesenseClusterReconciler) getNodeHealth(ctx context.Context, httpClient *http.Client, node NodeEndpoint, ts *tsv1alpha1.TypesenseCluster) (NodeHealth, error) {
+func (r *TypesenseClusterReconciler) getNodeHealth(ctx context.Context, httpClient *http.Client, node NodeEndpoint, ts *tsv1alpha1.TypesenseCluster, logs string) (NodeHealth, error) {
 	u, err := r.buildUrl(node, ts, ts.Spec.ApiPort, "/health")
 	if err != nil {
 		return NodeHealth{Ok: false}, err
@@ -132,6 +141,11 @@ func (r *TypesenseClusterReconciler) getNodeHealth(ctx context.Context, httpClie
 		return NodeHealth{Ok: false}, nil
 	}
 
+	contains := r.inspectPodLogs(logs, ErrorsRequirePodTermination...)
+	if nodeHealth.Ok && contains {
+		nodeHealth.Ok = false
+	}
+
 	return nodeHealth, nil
 }
 
@@ -145,7 +159,12 @@ func (r *TypesenseClusterReconciler) getQuorum(ctx context.Context, ts *tsv1alph
 		return &Quorum{}, err
 	}
 
-	nodes := strings.Split(cm.Data["nodes"], ",")
+	rawNodes, ok := cm.Data["nodes"]
+	if !ok || strings.TrimSpace(rawNodes) == "" {
+		err := fmt.Errorf("configmap %s is missing 'nodes' key", configMapName)
+		return &Quorum{}, err
+	}
+	nodes := strings.Split(rawNodes, ",")
 	availableNodes := len(nodes)
 	minRequiredNodes := getMinimumRequiredNodes(int(sts.Status.Replicas))
 
@@ -311,4 +330,31 @@ func (r *TypesenseClusterReconciler) buildUrl(node NodeEndpoint, ts *tsv1alpha1.
 
 	host := r.getNodeEndpoint(ts, node.IP.String())
 	return url.JoinPath(fmt.Sprintf("http://%s:%d", host, port), path)
+}
+
+func (r *TypesenseClusterReconciler) getPodLogs(ctx context.Context, node NodeEndpoint, namespace string) (string, error) {
+	opts := &v1.PodLogOptions{
+		Container: "typesense",
+		TailLines: ptr.To[int64](50),
+		//SinceSeconds: ptr.To[int64](120),
+	}
+
+	req := r.ClientSet.CoreV1().Pods(namespace).GetLogs(node.PodName, opts)
+	raw, err := req.DoRaw(ctx)
+	if err != nil {
+		r.logger.Error(err, "failed to get pod logs", "pod", node.PodName, "ip", node.IP)
+		return "", err
+	}
+
+	return string(raw), nil
+}
+
+func (r *TypesenseClusterReconciler) inspectPodLogs(logs string, errs ...error) bool {
+	for _, e := range errs {
+		if e != nil && strings.Contains(logs, e.Error()) {
+			return true
+		}
+	}
+
+	return false
 }
