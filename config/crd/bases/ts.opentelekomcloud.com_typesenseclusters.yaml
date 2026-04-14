@@ -1244,18 +1244,6 @@ spec:
               incrementalQuorumRecovery:
                 default: false
                 type: boolean
-              podManagementPolicy:
-                default: Parallel
-                enum:
-                - OrderedReady
-                - Parallel
-                type: string
-              terminationGracePeriodSeconds:
-                default: 5
-                format: int64
-                maximum: 300
-                minimum: 1
-                type: integer
               ingress:
                 properties:
                   annotations:
@@ -3623,6 +3611,12 @@ spec:
                 additionalProperties:
                   type: string
                 type: object
+              podManagementPolicy:
+                default: Parallel
+                enum:
+                - OrderedReady
+                - Parallel
+                type: string
               podsInheritStatefulSetAnnotations:
                 default: false
                 type: boolean
@@ -4591,6 +4585,12 @@ spec:
                 required:
                 - storageClassName
                 type: object
+              terminationGracePeriodSeconds:
+                default: 5
+                format: int64
+                maximum: 300
+                minimum: 1
+                type: integer
               tolerations:
                 items:
                   description: |-
