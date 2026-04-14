@@ -27,6 +27,7 @@ controllerManager:
   serviceAccount:
     annotations: {}
 imagePullSecrets: []
+installCRD: true
 kubernetesClusterDomain: cluster.local
 metricsService:
   ports:
