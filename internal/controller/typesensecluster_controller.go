@@ -51,6 +51,10 @@ type TypesenseClusterReconciler struct {
 	ClientSet       *kubernetes.Clientset
 	Configuration   *rest.Config
 	InCluster       bool
+
+	// deadlockObservations drives the ElectionDeadlock downgrade grace period so
+	// that a transient deadlock during pod churn does not scale the cluster to 1.
+	deadlockObservations *deadlockObservations
 }
 
 type TypesenseClusterReconciliationPhase struct {
@@ -305,6 +309,10 @@ func (r *TypesenseClusterReconciler) Reconcile(ctx context.Context, req ctrl.Req
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *TypesenseClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	if r.deadlockObservations == nil {
+		r.deadlockObservations = newDeadlockObservations(quorumDowngradeGracePeriod)
+	}
+
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&tsv1alpha1.TypesenseCluster{}, eventFilters).
 		Named("typesense-kubernetes-operator").
