@@ -45,7 +45,7 @@ func generateSecureRandomString(length int) (string, error) {
 	return string(result), nil
 }
 
-func mergeLabels(maps ...map[string]string) map[string]string {
+func mergeMaps(maps ...map[string]string) map[string]string {
 	size := 0
 	for _, m := range maps {
 		size += len(m)
@@ -63,6 +63,24 @@ func mergeLabels(maps ...map[string]string) map[string]string {
 	}
 
 	return merged
+}
+
+func mergeLabels(maps ...map[string]string) map[string]string {
+	return mergeMaps(maps...)
+}
+
+func mergeAnnotations(maps ...map[string]string) map[string]string {
+	return mergeMaps(maps...)
+}
+
+func getMergedAnnotations(ts *tsv1alpha1.TypesenseCluster) map[string]string {
+	// Remove ts.Spec.ServiceAnnotations in 0.5.0
+	annotations := ts.Spec.ServiceAnnotations
+	if ts.Spec.Service != nil && ts.Spec.Service.Annotations != nil {
+		annotations = mergeAnnotations(annotations, ts.Spec.Service.Annotations)
+	}
+
+	return annotations
 }
 
 func getMergedLabels(def map[string]string, scoped map[string]string) map[string]string {
@@ -118,6 +136,21 @@ func getReverseProxyObjectMeta(ts *tsv1alpha1.TypesenseCluster, name *string, an
 func getPodMonitorLabels(ts *tsv1alpha1.TypesenseCluster) map[string]string {
 	return map[string]string{
 		"app": fmt.Sprintf(ClusterMetricsPodMonitorAppLabel, ts.Name),
+	}
+}
+
+func getIngressObjectMeta(ts *tsv1alpha1.TypesenseCluster, name *string, labels, annotations map[string]string) metav1.ObjectMeta {
+	if name == nil {
+		name = &ts.Name
+	}
+
+	defaultLabels := getMergedLabels(getDefaultLabels(ts), getLabels(ts))
+
+	return metav1.ObjectMeta{
+		Name:        *name,
+		Namespace:   ts.Namespace,
+		Labels:      getMergedLabels(defaultLabels, labels),
+		Annotations: annotations,
 	}
 }
 
@@ -282,4 +315,15 @@ func getImageTag(image string) string {
 		return image
 	}
 	return image[pos+1:]
+}
+
+func externalTrafficPolicyEqual(
+	current corev1.ServiceExternalTrafficPolicyType,
+	desired *corev1.ServiceExternalTrafficPolicyType,
+) bool {
+	if desired == nil {
+		return current == ""
+	}
+
+	return current == *desired
 }
