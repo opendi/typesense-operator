@@ -184,8 +184,21 @@ func (r *TypesenseClusterReconciler) ReconcileQuorum(ctx context.Context, ts *ts
 			return ConditionReasonQuorumNotReadyWaitATerm, 0, nil
 		}
 
+		// A short-lived deadlock is expected during pod churn: a rescheduled pod
+		// gets a new IP, the nodes ConfigMap is rewritten and every pod is
+		// force-patched, which briefly leaves the cluster without a leader. That
+		// resolves on its own and must not trigger a destructive downgrade, so
+		// only downscale once the deadlock has persisted past the grace period.
+		if !r.recordDeadlock(quorumKey(ts)) {
+			r.logger.Info("election deadlock observed, waiting before downgrading quorum", "gracePeriod", quorumDowngradeGracePeriod)
+			return ConditionReasonQuorumNotReadyWaitATerm, 0, nil
+		}
+
 		return r.downgradeQuorum(ctx, ts, quorum.NodesListConfigMap, stsObjectKey, int32(healthyNodes), int32(minRequiredNodes))
 	}
+
+	// Any other cluster status means the deadlock (if there was one) has cleared.
+	r.clearDeadlock(quorumKey(ts))
 
 	if clusterStatus == ClusterStatusNotReady {
 		if availableNodes == 1 {
